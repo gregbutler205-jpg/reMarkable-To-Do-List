@@ -86,73 +86,148 @@ def pull_as_pdf(dest_dir: str) -> str:
 
 def _rmdoc_to_pdf(rmdoc_path: str, out_pdf: str):
     """
-    Convert a .rmdoc file to a PDF.
-    Strategy:
-      1. If there's an embedded PDF (base layer), extract it.
-      2. Otherwise, render the .rm handwriting layer(s) to PDF via rmc.
+    Convert a .rmdoc file to a PDF with handwriting overlaid on the base template.
+
+    reMarkable stores:
+      UUID.pdf                  — base template (printed page)
+      UUID/<page-UUID>.rm       — handwriting strokes (one file per page)
+
+    We:
+      1. Extract the base PDF.
+      2. For each .rm page, render strokes to SVG via rmc.
+      3. Composite: render SVG onto the base PDF page with pymupdf.
+      4. If no .rm files (blank page), return just the base PDF.
+      5. If no base PDF either, render .rm strokes alone as PDF.
     """
-    import zipfile, tempfile
+    import zipfile, tempfile, json as _json
+    import fitz  # pymupdf
+
     with zipfile.ZipFile(rmdoc_path) as z:
         names = z.namelist()
         print(f"rmdoc contents: {names}", flush=True)
 
-        # Strategy 1: embedded base PDF
-        pdf_names = [n for n in names if n.endswith('.pdf')]
-        if pdf_names:
-            with z.open(pdf_names[0]) as src, open(out_pdf, 'wb') as dst:
-                dst.write(src.read())
-            return
-
-        # Print .content JSON for debugging (shows fileType, pages, etc.)
-        content_names = [n for n in names if n.endswith('.content')]
-        for cn in content_names:
+        # Debug: print .content JSON (fileType, page list)
+        for cn in [n for n in names if n.endswith('.content')]:
             try:
-                import json as _json
-                content_data = _json.loads(z.read(cn).decode('utf-8', errors='replace'))
-                print(f"rmdoc .content ({cn}): fileType={content_data.get('fileType')}, "
-                      f"pages={content_data.get('pages', [])[:3]}, "
-                      f"pageCount={content_data.get('pageCount')}", flush=True)
+                cd = _json.loads(z.read(cn).decode('utf-8', errors='replace'))
+                print(f"rmdoc .content: fileType={cd.get('fileType')}, "
+                      f"pageCount={cd.get('pageCount')}, "
+                      f"pages={cd.get('pages', [])[:3]}", flush=True)
             except Exception as ce:
                 print(f"rmdoc .content parse error: {ce}", flush=True)
 
-        # Strategy 2: render .rm handwriting layers via rmc
-        rm_names = [n for n in names if n.endswith('.rm')]
-        if not rm_names:
+        pdf_names = [n for n in names if n.endswith('.pdf')]
+        rm_names  = [n for n in names if n.endswith('.rm')]
+        print(f"rmdoc: {len(pdf_names)} PDF(s), {len(rm_names)} .rm file(s)", flush=True)
+
+        if not pdf_names and not rm_names:
             raise FileNotFoundError(
                 f"No renderable content in .rmdoc. Contents: {names}"
             )
 
         with tempfile.TemporaryDirectory() as tmp:
-            # Extract all files
             z.extractall(tmp)
-            # Render each .rm page to PDF and merge
-            page_pdfs = []
+
+            base_pdf_path = os.path.join(tmp, pdf_names[0]) if pdf_names else None
+
+            if not rm_names:
+                # No handwriting — return base template as-is
+                print("rmdoc: no .rm files (blank page) — returning base PDF", flush=True)
+                shutil.copy(base_pdf_path, out_pdf)
+                return
+
+            # Render each .rm page to SVG via rmc
+            # rm_names sorted so page order is preserved
+            rm_svgs = []  # list of (rm_name, svg_path_or_None)
             for rm_name in sorted(rm_names):
                 rm_path = os.path.join(tmp, rm_name)
-                page_pdf = rm_path.replace('.rm', '.pdf')
+                svg_path = rm_path.replace('.rm', '.svg')
                 result = subprocess.run(
-                    ['rmc', '-t', 'pdf', '-o', page_pdf, rm_path],
+                    ['rmc', '-t', 'svg', '-o', svg_path, rm_path],
                     capture_output=True, text=True
                 )
-                print(f"rmc {rm_name}: {result.stdout} {result.stderr}", flush=True)
-                if os.path.exists(page_pdf):
-                    page_pdfs.append(page_pdf)
+                print(f"rmc svg {rm_name}: rc={result.returncode} "
+                      f"stdout={result.stdout!r} stderr={result.stderr!r}", flush=True)
+                rm_svgs.append((rm_name, svg_path if os.path.exists(svg_path) else None))
 
-            if not page_pdfs:
-                raise FileNotFoundError(
-                    f"rmc failed to render any .rm pages. Contents: {names}"
-                )
+            if base_pdf_path:
+                # Composite: multiply-blend base template + handwriting SVG.
+                # Pillow multiply: white(255)×X=X, black(0)×X=0 → strokes appear,
+                # white SVG background disappears naturally.
+                from PIL import Image, ImageChops
+                import io as _io
 
-            if len(page_pdfs) == 1:
-                shutil.copy(page_pdfs[0], out_pdf)
+                out_pages = []
+                base_doc = fitz.open(base_pdf_path)
+
+                for page_idx, (rm_name, svg_path) in enumerate(rm_svgs):
+                    # Render base page at ~150 DPI (1620 pt → ~3375 px at 150 dpi)
+                    bp = base_doc[page_idx] if page_idx < len(base_doc) else base_doc[0]
+                    scale = 150 / 72  # fitz default is 72 dpi
+                    base_px = bp.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+                    base_img = Image.frombytes("RGB",
+                                              [base_px.width, base_px.height],
+                                              base_px.samples)
+
+                    if svg_path:
+                        try:
+                            svg_data = open(svg_path, 'rb').read()
+                            svg_doc  = fitz.open("svg", svg_data)
+                            svg_px   = svg_doc[0].get_pixmap(
+                                matrix=fitz.Matrix(base_px.width  / svg_doc[0].rect.width,
+                                                   base_px.height / svg_doc[0].rect.height),
+                                alpha=False,
+                            )
+                            svg_img = Image.frombytes("RGB",
+                                                      [svg_px.width, svg_px.height],
+                                                      svg_px.samples)
+                            # Resize to exact match if needed
+                            if svg_img.size != base_img.size:
+                                svg_img = svg_img.resize(base_img.size, Image.LANCZOS)
+                            composited = ImageChops.multiply(base_img, svg_img)
+                            svg_doc.close()
+                            print(f"rmdoc: composited {rm_name} onto page {page_idx}", flush=True)
+                        except Exception as oe:
+                            print(f"rmdoc: SVG composite failed for {rm_name}: {oe} — using base only", flush=True)
+                            composited = base_img
+                    else:
+                        composited = base_img
+
+                    out_pages.append(composited)
+
+                base_doc.close()
+
+                # Save all pages into a single PDF
+                if out_pages:
+                    buf = _io.BytesIO()
+                    out_pages[0].save(buf, format='PDF', save_all=True,
+                                      append_images=out_pages[1:], resolution=150)
+                    with open(out_pdf, 'wb') as f:
+                        f.write(buf.getvalue())
+                else:
+                    shutil.copy(base_pdf_path, out_pdf)
+
             else:
-                # Merge multiple pages with pymupdf
-                import fitz
-                doc = fitz.open()
+                # No base PDF — render .rm strokes alone to PDF via rmc
+                page_pdfs = []
+                for rm_name, svg_path in rm_svgs:
+                    if svg_path is None:
+                        continue
+                    pg_pdf = svg_path.replace('.svg', '.pdf')
+                    result = subprocess.run(
+                        ['rmc', '-t', 'pdf', '-o', pg_pdf,
+                         os.path.join(tmp, rm_name)],
+                        capture_output=True, text=True
+                    )
+                    if os.path.exists(pg_pdf):
+                        page_pdfs.append(pg_pdf)
+                if not page_pdfs:
+                    raise FileNotFoundError("rmc failed to render any .rm pages")
+                merged = fitz.open()
                 for p in page_pdfs:
-                    doc.insert_pdf(fitz.open(p))
-                doc.save(out_pdf)
-                doc.close()
+                    merged.insert_pdf(fitz.open(p))
+                merged.save(out_pdf)
+                merged.close()
 
 
 def _make_blank_pdf(out_pdf: str):
