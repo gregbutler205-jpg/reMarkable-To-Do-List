@@ -63,6 +63,9 @@ jobs:
               print(f"Parses OK, type={d.get('type')}, email={d.get('client_email')}")
           except Exception as e:
               print(f"JSON parse error: {e}")
+          sid = os.environ.get("SHEET_ID", "")
+          print(f"SHEET_ID length: {len(sid)}")
+          print(f"SHEET_ID value:  {sid!r}")
           EOF
 
       - name: Run pipeline
