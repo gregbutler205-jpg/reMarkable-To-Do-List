@@ -40,7 +40,7 @@ jobs:
       - name: Install rmapi
         run: |
           curl -Lo rmapi.tar.gz \
-            https://github.com/juruen/rmapi/releases/latest/download/rmapi-linuxx86-64.tar.gz
+            https://github.com/ddvk/rmapi/releases/latest/download/rmapi-linuxx86-64.tar.gz
           tar -xzf rmapi.tar.gz
           chmod +x rmapi
           sudo mv rmapi /usr/local/bin/rmapi
