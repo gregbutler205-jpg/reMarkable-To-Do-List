@@ -98,7 +98,7 @@ def star_shape(c, cx, cy_svg, sz=22, color=ACCENT):
     c.drawPath(p, stroke=1, fill=1)
 
 # ── Layout constants ──────────────────────────────────────────────────────────
-ML, MR = 60, 1560       # left / right margin x
+ML, MR = 173, 1560      # left / right margin x  (ML shifted +113 px = +0.5 in)
 
 # Column anatomy (shared by all rows)
 NUM_X    = 130           # number right-align x
