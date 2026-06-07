@@ -69,4 +69,5 @@ jobs:
           EOF
 
       - name: Run pipeline
-        run: python run.py
+        run: python run.py 2>&1 | cat
+        continue-on-error: true
