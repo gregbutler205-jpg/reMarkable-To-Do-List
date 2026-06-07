@@ -50,24 +50,5 @@ jobs:
           mkdir -p ~/.config/rmapi
           echo "${{ secrets.RMAPI_CONFIG }}" > ~/.config/rmapi/rmapi.conf
 
-      - name: Debug credentials
-        run: |
-          python - <<'EOF'
-          import os, json
-          sa = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-          print(f"Length: {len(sa)}")
-          print(f"First 50 chars: {sa[:50]!r}")
-          print(f"Last 20 chars: {sa[-20:]!r}")
-          try:
-              d = json.loads(sa)
-              print(f"Parses OK, type={d.get('type')}, email={d.get('client_email')}")
-          except Exception as e:
-              print(f"JSON parse error: {e}")
-          sid = os.environ.get("SHEET_ID", "")
-          print(f"SHEET_ID length: {len(sid)}")
-          print(f"SHEET_ID value:  {sid!r}")
-          EOF
-
       - name: Run pipeline
-        run: python run.py 2>&1 | cat
-        continue-on-error: true
+        run: python run.py
