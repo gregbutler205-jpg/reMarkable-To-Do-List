@@ -1,0 +1,54 @@
+name: Nightly To-Do Loop
+
+on:
+  # ≈ 3 AM CST / 4 AM CDT  (UTC 09:00)
+  schedule:
+    - cron: "0 9 * * *"
+  # Manual trigger for testing / fallback recovery
+  workflow_dispatch:
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      MODEL_PROVIDER:              ${{ vars.MODEL_PROVIDER || 'claude' }}
+      SHEET_ID:                    ${{ secrets.SHEET_ID }}
+      ANTHROPIC_API_KEY:           ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY:              ${{ secrets.GEMINI_API_KEY }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      SMTP_USER:                   ${{ secrets.SMTP_USER }}
+      SMTP_PASS:                   ${{ secrets.SMTP_PASS }}
+      EMAIL_TO:                    ${{ secrets.EMAIL_TO }}
+      EMAIL_FROM:                  ${{ secrets.EMAIL_FROM }}
+      RM_DOC_NAME:                 ${{ vars.RM_DOC_NAME || 'To-Do' }}
+      RM_ARCHIVE_FOLDER:           ${{ vars.RM_ARCHIVE_FOLDER || 'Archive' }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install rmapi
+        run: |
+          curl -Lo rmapi.tar.gz \
+            https://github.com/juruen/rmapi/releases/latest/download/rmapi-linuxx86-64.tar.gz
+          tar -xzf rmapi.tar.gz
+          chmod +x rmapi
+          sudo mv rmapi /usr/local/bin/rmapi
+
+      - name: Write rmapi config
+        run: |
+          mkdir -p ~/.config/rmapi
+          echo "${{ secrets.RMAPI_CONFIG }}" > ~/.config/rmapi/rmapi.conf
+
+      - name: Run pipeline
+        run: python run.py

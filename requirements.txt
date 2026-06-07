@@ -1,0 +1,7 @@
+anthropic
+google-generativeai
+Pillow
+gspread
+google-auth
+reportlab
+pymupdf
