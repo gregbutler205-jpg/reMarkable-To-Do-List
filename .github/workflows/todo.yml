@@ -56,4 +56,8 @@ jobs:
           rmapi ls || true
 
       - name: Run pipeline
-        run: python run.py
+        run: python run.py 2>&1 | tee pipeline.log; exit ${PIPESTATUS[0]}
+
+      - name: Show pipeline log
+        if: always()
+        run: cat pipeline.log || true
