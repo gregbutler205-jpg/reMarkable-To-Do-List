@@ -50,5 +50,10 @@ jobs:
           mkdir -p ~/.config/rmapi
           echo "${{ secrets.RMAPI_CONFIG }}" > ~/.config/rmapi/rmapi.conf
 
+      - name: Debug rmapi
+        run: |
+          rmapi ls / || true
+          rmapi ls || true
+
       - name: Run pipeline
         run: python run.py
