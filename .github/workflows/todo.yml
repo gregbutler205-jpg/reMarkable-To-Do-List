@@ -57,12 +57,13 @@ jobs:
 
       - name: Run pipeline
         run: |
-          python run.py > pipeline.log 2>&1 || true
-          python - <<'EOF'
-          import re
-          with open("pipeline.log") as f:
-              text = f.read()
-          # Remove anything that looks like a secret token or key
-          text = re.sub(r'[A-Za-z0-9_\-]{30,}', lambda m: m.group()[:6]+'***', text)
-          print(text[:3000])
-          EOF
+          set +e
+          python run.py > pipeline.log 2>&1
+          echo "EXIT_CODE=$?" >> $GITHUB_ENV
+          python3 -c "
+          import re, sys
+          text = open('pipeline.log').read()
+          text = re.sub(r'(?<![a-z])[A-Za-z0-9+/]{40,}(?!=)', '[REDACTED]', text)
+          sys.stdout.write(text[:4000])
+          "
+          exit $EXIT_CODE
