@@ -36,11 +36,14 @@ def main():
     provider = config.MODEL_PROVIDER
 
     # ── 1. Pull ───────────────────────────────────────────────────────────────
+    print("Starting pull...", flush=True)
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
             pulled_pdf = rmapi_client.pull_as_pdf(tmpdir)
+            print(f"Pull succeeded: {pulled_pdf}", flush=True)
         except Exception as exc:
             msg = f"rmapi pull failed: {exc}"
+            print(f"ERROR: {msg}", flush=True)
             errors.append(msg)
             notifier.send_alert("pull failed", msg)
             sys.exit(1)
