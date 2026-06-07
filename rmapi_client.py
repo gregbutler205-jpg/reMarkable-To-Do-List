@@ -31,32 +31,66 @@ def pull_as_pdf(dest_dir: str) -> str:
     """
     Download the rolling To-Do document from the reMarkable cloud.
     Returns the local path of the downloaded PDF.
+    The ddvk rmapi fork downloads as .rmdoc; we export to PDF using rmapi export.
     """
     os.makedirs(dest_dir, exist_ok=True)
     original = os.getcwd()
     try:
         os.chdir(dest_dir)
-        result = _run(["get", f"/{config.RM_DOC_NAME}"])
-        print(f"rmapi get stdout: {result.stdout!r}", flush=True)
-        print(f"rmapi get stderr: {result.stderr!r}", flush=True)
+        # Try exporting directly as PDF first (ddvk fork supports this)
+        result = _run(["export", "-f", "pdf", f"/{config.RM_DOC_NAME}"], check=False)
+        print(f"rmapi export stdout: {result.stdout!r}", flush=True)
+        print(f"rmapi export stderr: {result.stderr!r}", flush=True)
     finally:
         os.chdir(original)
 
-    # List everything in dest_dir for debugging
-    all_files = list(Path(dest_dir).iterdir())
-    print(f"Files in dest_dir: {[f.name for f in all_files]}", flush=True)
-
-    # Find the PDF rmapi wrote
     candidates = list(Path(dest_dir).glob("*.pdf"))
-    if not candidates:
-        # Also try zip files (some rmapi versions download as zip)
-        candidates = list(Path(dest_dir).glob("*.zip"))
-    if not candidates:
+    if candidates:
+        return str(candidates[0])
+
+    # Fallback: get the .rmdoc and convert via rmapi export
+    original = os.getcwd()
+    try:
+        os.chdir(dest_dir)
+        _run(["get", f"/{config.RM_DOC_NAME}"])
+        rmdoc = next(Path(dest_dir).glob("*.rmdoc"), None)
+        if rmdoc:
+            # rmdoc is a zip; extract the PDF page images and combine
+            out_pdf = str(Path(dest_dir) / f"{config.RM_DOC_NAME}.pdf")
+            _rmdoc_to_pdf(str(rmdoc), out_pdf)
+            return out_pdf
+    finally:
+        os.chdir(original)
+
+    all_files = list(Path(dest_dir).iterdir())
+    raise FileNotFoundError(
+        f"Could not get a PDF from reMarkable. "
+        f"Files present: {[f.name for f in all_files]}"
+    )
+
+
+def _rmdoc_to_pdf(rmdoc_path: str, out_pdf: str):
+    """
+    Convert a .rmdoc file (zip of page data) to a PDF.
+    .rmdoc contains a PDF of the base layer inside the zip.
+    """
+    import zipfile
+    with zipfile.ZipFile(rmdoc_path) as z:
+        names = z.namelist()
+        print(f"rmdoc contents: {names}", flush=True)
+        # Look for an embedded PDF
+        pdf_names = [n for n in names if n.endswith('.pdf')]
+        if pdf_names:
+            with z.open(pdf_names[0]) as src, open(out_pdf, 'wb') as dst:
+                dst.write(src.read())
+            return
+        # No embedded PDF — the document is pure handwriting with no base PDF.
+        # In this case we have nothing to read; create a placeholder.
         raise FileNotFoundError(
-            f"rmapi get did not produce a PDF in {dest_dir}. "
-            f"Files present: {[f.name for f in all_files]}"
+            f"No PDF found inside .rmdoc. "
+            f"The To-Do document may be a notebook (no base PDF). "
+            f"Contents: {names}"
         )
-    return str(candidates[0])
 
 
 def push_pdf(pdf_path: str):
