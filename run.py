@@ -69,12 +69,17 @@ def main():
                        "new_items": [], "priority_items": [], "uncertain": []}
 
         if cp and images:
+            import os
+            img_size = os.path.getsize(images[0])
+            print(f"Page image: {images[0]}, size={img_size} bytes", flush=True)
             known_items   = cp.get("items", [])
             region_bounds = cp.get("region_bounds", {})
+            print(f"Known items: {known_items}", flush=True)
             try:
                 read_result = llm_reader.read_page(
                     images[0], known_items, region_bounds, provider=provider
                 )
+                print(f"LLM result: {read_result}", flush=True)
             except Exception as exc:
                 errors.append(f"LLM read failed: {exc}")
                 notifier.send_alert("LLM read failed", traceback.format_exc())
