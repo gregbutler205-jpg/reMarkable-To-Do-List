@@ -123,4 +123,5 @@ def archive_pdf(pdf_path: str):
     named = Path(pdf_path).parent / f"{today}.pdf"
     if pdf_path != str(named):
         shutil.copy(pdf_path, named)
-    _run(["put", str(named), folder])
+    # ddvk rmapi: put <file> <destination folder>
+    _run(["put", str(named), folder], check=False)
