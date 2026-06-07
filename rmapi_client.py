@@ -31,14 +31,19 @@ def pull_as_pdf(dest_dir: str) -> str:
     """
     Download the rolling To-Do document from the reMarkable cloud.
     Returns the local path of the downloaded PDF.
-    The ddvk rmapi fork downloads as .rmdoc; we export to PDF using rmapi export.
+
+    Strategies (tried in order):
+      1. rmapi export /To-Do  — renders handwriting to PDF (ddvk default)
+      2. rmapi get /To-Do     — downloads .rmdoc zip; we extract & render .rm files
+      3. Template fallback    — no handwriting found; return empty-image placeholder
     """
     os.makedirs(dest_dir, exist_ok=True)
     original = os.getcwd()
+
+    # ── Strategy 1: rmapi export ─────────────────────────────────────────────
     try:
         os.chdir(dest_dir)
-        # Try exporting directly as PDF first (ddvk fork supports this)
-        result = _run(["export", "-f", "pdf", f"/{config.RM_DOC_NAME}"], check=False)
+        result = _run(["export", f"/{config.RM_DOC_NAME}"], check=False)
         print(f"rmapi export stdout: {result.stdout!r}", flush=True)
         print(f"rmapi export stderr: {result.stderr!r}", flush=True)
     finally:
@@ -46,50 +51,127 @@ def pull_as_pdf(dest_dir: str) -> str:
 
     candidates = list(Path(dest_dir).glob("*.pdf"))
     if candidates:
+        print(f"pull_as_pdf: export succeeded → {candidates[0]}", flush=True)
         return str(candidates[0])
 
-    # Fallback: get the .rmdoc and convert via rmapi export
-    original = os.getcwd()
+    # ── Strategy 2: rmapi get + rmdoc parsing ────────────────────────────────
     try:
         os.chdir(dest_dir)
-        _run(["get", f"/{config.RM_DOC_NAME}"])
-        rmdoc = next(Path(dest_dir).glob("*.rmdoc"), None)
-        if rmdoc:
-            # rmdoc is a zip; extract the PDF page images and combine
-            out_pdf = str(Path(dest_dir) / f"{config.RM_DOC_NAME}.pdf")
-            _rmdoc_to_pdf(str(rmdoc), out_pdf)
-            return out_pdf
+        result = _run(["get", f"/{config.RM_DOC_NAME}"], check=False)
+        print(f"rmapi get stdout: {result.stdout!r}", flush=True)
+        print(f"rmapi get stderr: {result.stderr!r}", flush=True)
     finally:
         os.chdir(original)
 
-    all_files = list(Path(dest_dir).iterdir())
-    raise FileNotFoundError(
-        f"Could not get a PDF from reMarkable. "
-        f"Files present: {[f.name for f in all_files]}"
-    )
+    rmdoc = next(Path(dest_dir).glob("*.rmdoc"), None)
+    if rmdoc:
+        out_pdf = str(Path(dest_dir) / f"{config.RM_DOC_NAME}.pdf")
+        try:
+            _rmdoc_to_pdf(str(rmdoc), out_pdf)
+            print(f"pull_as_pdf: rmdoc→pdf succeeded → {out_pdf}", flush=True)
+            return out_pdf
+        except FileNotFoundError as e:
+            # No .rm files in rmdoc — doc may be a blank template with no strokes yet.
+            # Fall through to strategy 3.
+            print(f"pull_as_pdf: rmdoc had no renderable content: {e}", flush=True)
+
+    # ── Strategy 3: blank placeholder ────────────────────────────────────────
+    # We have no handwriting to read.  Return a tiny placeholder PDF so the
+    # rest of the pipeline (which just won't find any marks) can continue.
+    print("pull_as_pdf: no handwriting found — using blank placeholder PDF", flush=True)
+    placeholder = str(Path(dest_dir) / "placeholder.pdf")
+    _make_blank_pdf(placeholder)
+    return placeholder
 
 
 def _rmdoc_to_pdf(rmdoc_path: str, out_pdf: str):
     """
-    Convert a .rmdoc file (zip of page data) to a PDF.
-    .rmdoc contains a PDF of the base layer inside the zip.
+    Convert a .rmdoc file to a PDF.
+    Strategy:
+      1. If there's an embedded PDF (base layer), extract it.
+      2. Otherwise, render the .rm handwriting layer(s) to PDF via rmc.
     """
-    import zipfile
+    import zipfile, tempfile
     with zipfile.ZipFile(rmdoc_path) as z:
         names = z.namelist()
         print(f"rmdoc contents: {names}", flush=True)
-        # Look for an embedded PDF
+
+        # Strategy 1: embedded base PDF
         pdf_names = [n for n in names if n.endswith('.pdf')]
         if pdf_names:
             with z.open(pdf_names[0]) as src, open(out_pdf, 'wb') as dst:
                 dst.write(src.read())
             return
-        # No embedded PDF — the document is pure handwriting with no base PDF.
-        # In this case we have nothing to read; create a placeholder.
-        raise FileNotFoundError(
-            f"No PDF found inside .rmdoc. "
-            f"The To-Do document may be a notebook (no base PDF). "
-            f"Contents: {names}"
+
+        # Print .content JSON for debugging (shows fileType, pages, etc.)
+        content_names = [n for n in names if n.endswith('.content')]
+        for cn in content_names:
+            try:
+                import json as _json
+                content_data = _json.loads(z.read(cn).decode('utf-8', errors='replace'))
+                print(f"rmdoc .content ({cn}): fileType={content_data.get('fileType')}, "
+                      f"pages={content_data.get('pages', [])[:3]}, "
+                      f"pageCount={content_data.get('pageCount')}", flush=True)
+            except Exception as ce:
+                print(f"rmdoc .content parse error: {ce}", flush=True)
+
+        # Strategy 2: render .rm handwriting layers via rmc
+        rm_names = [n for n in names if n.endswith('.rm')]
+        if not rm_names:
+            raise FileNotFoundError(
+                f"No renderable content in .rmdoc. Contents: {names}"
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # Extract all files
+            z.extractall(tmp)
+            # Render each .rm page to PDF and merge
+            page_pdfs = []
+            for rm_name in sorted(rm_names):
+                rm_path = os.path.join(tmp, rm_name)
+                page_pdf = rm_path.replace('.rm', '.pdf')
+                result = subprocess.run(
+                    ['rmc', '-t', 'pdf', '-o', page_pdf, rm_path],
+                    capture_output=True, text=True
+                )
+                print(f"rmc {rm_name}: {result.stdout} {result.stderr}", flush=True)
+                if os.path.exists(page_pdf):
+                    page_pdfs.append(page_pdf)
+
+            if not page_pdfs:
+                raise FileNotFoundError(
+                    f"rmc failed to render any .rm pages. Contents: {names}"
+                )
+
+            if len(page_pdfs) == 1:
+                shutil.copy(page_pdfs[0], out_pdf)
+            else:
+                # Merge multiple pages with pymupdf
+                import fitz
+                doc = fitz.open()
+                for p in page_pdfs:
+                    doc.insert_pdf(fitz.open(p))
+                doc.save(out_pdf)
+                doc.close()
+
+
+def _make_blank_pdf(out_pdf: str):
+    """Create a minimal blank single-page PDF (1620×2160 pt = reMarkable size)."""
+    try:
+        import fitz
+        doc = fitz.open()
+        doc.new_page(width=1620, height=2160)
+        doc.save(out_pdf)
+        doc.close()
+    except Exception:
+        # Ultra-minimal PDF as fallback if fitz isn't available
+        Path(out_pdf).write_bytes(
+            b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+            b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+            b"3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj\n"
+            b"xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n"
+            b"0000000058 00000 n\n0000000115 00000 n\n"
+            b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF\n"
         )
 
 

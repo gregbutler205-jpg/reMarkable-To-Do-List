@@ -53,7 +53,20 @@ jobs:
       - name: Debug rmapi
         run: |
           rmapi ls / || true
-          rmapi ls || true
+          rmapi version || rmapi --version || true
+
+      - name: Debug export attempt
+        run: |
+          mkdir -p /tmp/rm_debug
+          cd /tmp/rm_debug
+          rmapi export "/${{ vars.RM_DOC_NAME || 'To-Do' }}" || true
+          echo "=== files after export ==="
+          ls -la /tmp/rm_debug/ || true
+          echo "=== get attempt ==="
+          rmapi get "/${{ vars.RM_DOC_NAME || 'To-Do' }}" || true
+          echo "=== files after get ==="
+          ls -la /tmp/rm_debug/ || true
+          for f in /tmp/rm_debug/*.rmdoc; do [ -f "$f" ] && echo "=== rmdoc contents ===" && python3 -c "import zipfile,sys; z=zipfile.ZipFile('$f'); print(z.namelist())" || true; done
 
       - name: Run pipeline
         run: python run.py
