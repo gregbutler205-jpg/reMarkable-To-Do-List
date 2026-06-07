@@ -57,13 +57,10 @@ jobs:
 
       - name: Run pipeline
         run: |
-          set +e
-          python run.py > pipeline.log 2>&1
-          echo "EXIT_CODE=$?" >> $GITHUB_ENV
-          python3 -c "
-          import re, sys
-          text = open('pipeline.log').read()
-          text = re.sub(r'(?<![a-z])[A-Za-z0-9+/]{40,}(?!=)', '[REDACTED]', text)
-          sys.stdout.write(text[:4000])
-          "
-          exit $EXIT_CODE
+          python -c "import config; print('config OK')"
+          python -c "import sheet_store; print('sheet_store OK')"
+          python -c "import page_renderer; print('page_renderer OK')"
+          python -c "import rmapi_client; print('rmapi_client OK')"
+          python -c "import llm_reader; print('llm_reader OK')"
+          python -c "import notifier; print('notifier OK')"
+          python run.py
