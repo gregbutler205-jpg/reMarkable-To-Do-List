@@ -33,19 +33,28 @@ def pull_as_pdf(dest_dir: str) -> str:
     Returns the local path of the downloaded PDF.
     """
     os.makedirs(dest_dir, exist_ok=True)
-    # rmapi get downloads into cwd, so we chdir there
     original = os.getcwd()
     try:
         os.chdir(dest_dir)
-        _run(["get", f"/{config.RM_DOC_NAME}"])
+        result = _run(["get", f"/{config.RM_DOC_NAME}"])
+        print(f"rmapi get stdout: {result.stdout!r}", flush=True)
+        print(f"rmapi get stderr: {result.stderr!r}", flush=True)
     finally:
         os.chdir(original)
 
-    # Find the PDF rmapi wrote (it uses the doc name as the filename)
+    # List everything in dest_dir for debugging
+    all_files = list(Path(dest_dir).iterdir())
+    print(f"Files in dest_dir: {[f.name for f in all_files]}", flush=True)
+
+    # Find the PDF rmapi wrote
     candidates = list(Path(dest_dir).glob("*.pdf"))
     if not candidates:
+        # Also try zip files (some rmapi versions download as zip)
+        candidates = list(Path(dest_dir).glob("*.zip"))
+    if not candidates:
         raise FileNotFoundError(
-            f"rmapi get did not produce a PDF in {dest_dir}"
+            f"rmapi get did not produce a PDF in {dest_dir}. "
+            f"Files present: {[f.name for f in all_files]}"
         )
     return str(candidates[0])
 
