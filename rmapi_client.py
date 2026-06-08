@@ -184,6 +184,8 @@ def _rmdoc_to_pdf(rmdoc_path: str, out_pdf: str):
                             # Resize to exact match if needed
                             if svg_img.size != base_img.size:
                                 svg_img = svg_img.resize(base_img.size, Image.LANCZOS)
+                            # rmc SVG has Y-axis inverted relative to the PDF render
+                            svg_img = svg_img.transpose(Image.FLIP_TOP_BOTTOM)
                             composited = ImageChops.multiply(base_img, svg_img)
                             svg_doc.close()
                             print(f"rmdoc: composited {rm_name} onto page {page_idx}", flush=True)
