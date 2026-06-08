@@ -19,6 +19,7 @@ def send_summary(
     uncertain: list[dict],
     provider: str,
     errors: str = "",
+    page_image_path: str | None = None,
 ):
     """
     Send the nightly summary email with the rendered PDF attached.
@@ -46,6 +47,18 @@ def send_summary(
                 subtype="pdf",
                 filename="tomorrow.pdf",
             )
+
+    if page_image_path:
+        try:
+            with open(page_image_path, "rb") as fh:
+                msg.add_attachment(
+                    fh.read(),
+                    maintype="image",
+                    subtype="png",
+                    filename="page_read_by_llm.png",
+                )
+        except Exception:
+            pass
 
     with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT) as smtp:
         smtp.ehlo()

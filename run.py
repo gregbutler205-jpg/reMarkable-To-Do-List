@@ -75,16 +75,12 @@ def main():
                        "priority_done_ids": [], "priority_demote_ids": [],
                        "new_items": [], "priority_items": [], "uncertain": []}
 
+        page_image_for_email = None
         if cp and images:
             import os, shutil
             img_size = os.path.getsize(images[0])
             print(f"Page image: {images[0]}, size={img_size} bytes", flush=True)
-            # Save a copy for workflow artifact inspection
-            try:
-                os.makedirs("/tmp/page_debug", exist_ok=True)
-                shutil.copy(images[0], "/tmp/page_debug/page_sent_to_llm.png")
-            except Exception:
-                pass
+            page_image_for_email = images[0]
             known_items   = cp.get("items", [])
             region_bounds = cp.get("region_bounds", {})
             print(f"Known items: {known_items}", flush=True)
@@ -183,6 +179,7 @@ def main():
             uncertain=uncertain,
             provider=provider,
             errors="; ".join(errors),
+            page_image_path=page_image_for_email,
         )
         store.append_log(
             done=len(done_set | sd_done | pri_done),
