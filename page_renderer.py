@@ -73,27 +73,41 @@ def build_page(
     rm = region_map(n_fy)
 
     # Build the items list for CurrentPage (what the LLM will be given tomorrow)
+    # Include per-row y1/y2 so the LLM can precisely match marks to task IDs
+    fy_rows  = rm["from_yesterday"]["rows"]
+    pri_rows = rm["priorities"]["rows"]
+    sd_rows  = rm["someday"]["rows"]
+
     items = []
     for i, t in enumerate(fy_tasks):
+        row = fy_rows[i] if i < len(fy_rows) else {}
         items.append({
             "display_index": i + 1,
             "task_id": t["id"],
             "text": t["text"],
             "region": "from_yesterday",
+            "row_y1": row.get("y1"),
+            "row_y2": row.get("y2"),
         })
     for i, t in enumerate(pri_tasks):
+        row = pri_rows[i] if i < len(pri_rows) else {}
         items.append({
             "display_index": i + 1,
             "task_id": t["id"],
             "text": t["text"],
             "region": "priorities",
+            "row_y1": row.get("y1"),
+            "row_y2": row.get("y2"),
         })
     for i, t in enumerate(sd_tasks):
+        row = sd_rows[i] if i < len(sd_rows) else {}
         items.append({
             "display_index": i + 1,
             "task_id": t["id"],
             "text": t["text"],
             "region": "someday",
+            "row_y1": row.get("y1"),
+            "row_y2": row.get("y2"),
         })
 
     current_page = {

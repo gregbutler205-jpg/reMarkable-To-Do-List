@@ -13,30 +13,49 @@ import config
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
 _PROMPT = """\
-You are reading a reMarkable tablet to-do page photo. Return ONLY strict JSON — no prose, no markdown.
+You are reading a scanned reMarkable tablet to-do page. Return ONLY strict JSON — no prose, no markdown.
 
-KNOWN PRINTED ITEMS (these are the items the system printed; your job is to check their marks):
+COORDINATE SYSTEM: The page is {W}×{H} points, origin top-left. Each item has row_y1/row_y2 \
+giving its vertical band. The image may be scaled from these coordinates but proportions are preserved.
+
+TEMPLATE STRUCTURE (columns, left→right on every row):
+  • Number label (e.g. "1.")    — far left
+  • Checkbox square             — at x≈{CHK_X}, size≈{CHK_SZ}px  ← "done" mark goes here
+  • Task text                   — printed text starts at x≈{TXT_X}
+  • UP arrow triangle  ▲        — at x≈{UP_X}  ← "promote" mark goes here
+  • DOWN arrow triangle ▽       — at x≈{DN_X}  ← "demote" mark goes here
+
+HOW MARKS LOOK (any of these counts as "marked"):
+  • Checkbox done: tick ✓, X, check, solid fill, scribble INSIDE or OVER the square, or text struck through
+  • UP/DOWN arrow marked: solid fill (blacked in), tick, X, or any ink ON or INSIDE the small triangle
+
+KNOWN PRINTED ITEMS — match marks to these by vertical position (row_y1…row_y2):
 {items_json}
 
-REGION BOUNDS (device pixels, origin top-left — use these to locate each item):
+REGION BOUNDS (for spatial reference):
 {regions_json}
 
-INSTRUCTIONS:
-1. For each known item, check whether the user drew a mark on it.
-2. Classify by the item's region AND the mark type:
-   - From Yesterday / New Tasks: checkbox ticked or text struck → done_item_ids
-   - From Yesterday / New Tasks: ↑ (UP) box marked → promote_item_ids (→ Priorities)
-   - From Yesterday / New Tasks: ↓ (DOWN) box marked → demote_item_ids (→ Someday)
-   - Someday: checkbox ticked or text struck → sd_done_ids
-   - Someday: ↑ (UP) box marked → sd_promote_ids (→ From Yesterday)
-   - Priorities: checkbox ticked or text struck → priority_done_ids
-   - Priorities: ↓ (DOWN) box marked → priority_demote_ids (→ From Yesterday)
-3. Transcribe any HANDWRITTEN text in the New Tasks region → new_items.
-4. Transcribe any HANDWRITTEN text in the Priorities region → priority_items.
-5. The Done Recently strip is INERT — never include any item from it in any list.
-6. Conservative rule: only apply a mark when it is CLEAR. When ambiguous, add to uncertain.
+CLASSIFICATION RULES:
+  from_yesterday / new_tasks rows:
+    checkbox or strikethrough → done_item_ids
+    UP arrow marked           → promote_item_ids  (→ Priorities)
+    DOWN arrow marked         → demote_item_ids   (→ Someday)
+  priorities rows:
+    checkbox or strikethrough → priority_done_ids
+    DOWN arrow marked         → priority_demote_ids (→ From Yesterday)
+  someday rows:
+    checkbox or strikethrough → sd_done_ids
+    UP arrow marked           → sd_promote_ids   (→ From Yesterday)
 
-OUTPUT JSON SCHEMA (return all fields, use empty arrays when nothing applies):
+NEW HANDWRITING:
+  • Handwritten text in the New Tasks region  → new_items
+  • Handwritten text in the Priorities region → priority_items
+  • Done Recently strip is INERT — ignore everything in it
+
+CONSERVATIVE RULE: Only mark an item when the ink is clearly on its checkbox or arrow. \
+When unsure, add to "uncertain" with a note.
+
+OUTPUT JSON SCHEMA (all fields required, empty arrays when nothing applies):
 {schema}
 """
 
@@ -55,7 +74,15 @@ _SCHEMA = json.dumps({
 
 
 def _build_prompt(known_items: list, region_bounds: dict) -> str:
+    from generate_template import W, H, CHK_X, CHK_SZ, TXT_X, UP_X, DN_X
+    cols = region_bounds.get("columns", {})
     return _PROMPT.format(
+        W=W, H=H,
+        CHK_X=cols.get("checkbox_x",  CHK_X),
+        CHK_SZ=cols.get("checkbox_size", CHK_SZ),
+        TXT_X=cols.get("text_x",      TXT_X),
+        UP_X=cols.get("up_arrow_x",   UP_X),
+        DN_X=cols.get("down_arrow_x", DN_X),
         items_json=json.dumps(known_items, indent=2),
         regions_json=json.dumps(region_bounds, indent=2),
         schema=_SCHEMA,
