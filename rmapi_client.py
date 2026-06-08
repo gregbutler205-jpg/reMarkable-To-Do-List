@@ -163,7 +163,7 @@ def _rmdoc_to_pdf(rmdoc_path: str, out_pdf: str):
                 for page_idx, (rm_name, svg_path) in enumerate(rm_svgs):
                     # Render base page at ~150 DPI (1620 pt → ~3375 px at 150 dpi)
                     bp = base_doc[page_idx] if page_idx < len(base_doc) else base_doc[0]
-                    scale = 150 / 72  # fitz default is 72 dpi
+                    scale = 226 / 72  # render at reMarkable's native 226 DPI
                     base_px = bp.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
                     base_img = Image.frombytes("RGB",
                                               [base_px.width, base_px.height],

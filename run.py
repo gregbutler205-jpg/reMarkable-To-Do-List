@@ -76,9 +76,15 @@ def main():
                        "new_items": [], "priority_items": [], "uncertain": []}
 
         if cp and images:
-            import os
+            import os, shutil
             img_size = os.path.getsize(images[0])
             print(f"Page image: {images[0]}, size={img_size} bytes", flush=True)
+            # Save a copy for workflow artifact inspection
+            try:
+                os.makedirs("/tmp/page_debug", exist_ok=True)
+                shutil.copy(images[0], "/tmp/page_debug/page_sent_to_llm.png")
+            except Exception:
+                pass
             known_items   = cp.get("items", [])
             region_bounds = cp.get("region_bounds", {})
             print(f"Known items: {known_items}", flush=True)
