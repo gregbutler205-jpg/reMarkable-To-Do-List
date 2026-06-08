@@ -51,8 +51,15 @@ def main():
         # ── 2. Idempotency gate ───────────────────────────────────────────────
         cp = store.get_current_page()
         if cp and cp.get("processed"):
-            print("Page already processed — re-rendering idempotently and skipping reconcile.")
-            _render_and_push(store, tmpdir, errors, provider, skip_email=True)
+            print("Page already processed — re-rendering and pushing tomorrow's page.", flush=True)
+            pdf_path = _render_and_push(store, tmpdir, errors, provider)
+            notifier.send_summary(
+                pdf_path=pdf_path,
+                done=0, demoted=0, promoted=0,
+                new_items=[], carried=0, uncertain=[],
+                provider=provider,
+                errors="(idempotent re-render — page was already processed)",
+            )
             return
 
         # ── 3. Read ───────────────────────────────────────────────────────────

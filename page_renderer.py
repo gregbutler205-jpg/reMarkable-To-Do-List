@@ -74,9 +74,10 @@ def build_page(
 
     # Build the items list for CurrentPage (what the LLM will be given tomorrow)
     # Include per-row y1/y2 so the LLM can precisely match marks to task IDs
-    fy_rows  = rm["from_yesterday"]["rows"]
-    pri_rows = rm["priorities"]["rows"]
-    sd_rows  = rm["someday"]["rows"]
+    secs     = rm.get("sections", rm)   # region_map nests under "sections"
+    fy_rows  = secs["from_yesterday"]["rows"]
+    pri_rows = secs["priorities"]["rows"]
+    sd_rows  = secs["someday"]["rows"]
 
     items = []
     for i, t in enumerate(fy_tasks):
