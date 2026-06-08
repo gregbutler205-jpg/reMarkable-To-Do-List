@@ -158,11 +158,12 @@ def main():
         carry_ids = [tid for tid in printed_ids if tid not in mutated]
         store.increment_rollover(carry_ids)
 
-        # Mark the page consumed
-        store.mark_processed()
-
         # ── 5–6. Render + push ────────────────────────────────────────────────
+        # Mark processed ONLY after a successful render so that if render
+        # fails the next run re-reads this page instead of hitting the gate.
         pdf_path = _render_and_push(store, tmpdir, errors, provider, skip_email=True)
+        if pdf_path:
+            store.mark_processed()
 
         # ── 7. Notify + log ───────────────────────────────────────────────────
         uncertain = read_result.get("uncertain", [])

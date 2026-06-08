@@ -120,6 +120,13 @@ class SheetStore:
             cp["processed"] = True
             self.set_current_page(cp)
 
+    def clear_processed(self):
+        """Reset processed flag so the pipeline re-reads the current page."""
+        cp = self.get_current_page()
+        if cp:
+            cp["processed"] = False
+            self.set_current_page(cp)
+
     # ── Log ────────────────────────────────────────────────────────────────────
 
     def append_log(self, done=0, demoted=0, promoted=0, new=0,
