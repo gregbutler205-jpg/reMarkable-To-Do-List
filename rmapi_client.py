@@ -112,7 +112,7 @@ def _rmdoc_to_pdf(rmdoc_path: str, out_pdf: str):
                 cd = _json.loads(z.read(cn).decode('utf-8', errors='replace'))
                 print(f"rmdoc .content: fileType={cd.get('fileType')}, "
                       f"pageCount={cd.get('pageCount')}, "
-                      f"pages={cd.get('pages', [])[:3]}", flush=True)
+                      f"pages={(cd.get('pages') or [])[:3]}", flush=True)
             except Exception as ce:
                 print(f"rmdoc .content parse error: {ce}", flush=True)
 
