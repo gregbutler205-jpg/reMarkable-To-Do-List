@@ -108,28 +108,36 @@ def main():
                             str(item["display_index"]): item["task_id"]
                             for item in known_items
                         }
+                        def _region_of(tid_):
+                            return next((i["region"] for i in known_items
+                                         if i["task_id"] == tid_), "")
+
                         for num in az.get("promote_numbers", []):
                             tid = idx_to_id.get(str(num).strip())
                             if tid:
-                                item_region = next(
-                                    (i["region"] for i in known_items
-                                     if i["task_id"] == tid), ""
-                                )
-                                if item_region == "someday":
+                                r = _region_of(tid)
+                                if r == "someday":
                                     read_result["sd_promote_ids"].append(tid)
                                 else:
                                     read_result["promote_item_ids"].append(tid)
                         for num in az.get("demote_numbers", []):
                             tid = idx_to_id.get(str(num).strip())
                             if tid:
-                                item_region = next(
-                                    (i["region"] for i in known_items
-                                     if i["task_id"] == tid), ""
-                                )
-                                if item_region == "priorities":
+                                r = _region_of(tid)
+                                if r == "priorities":
                                     read_result["priority_demote_ids"].append(tid)
                                 else:
                                     read_result["demote_item_ids"].append(tid)
+                        for num in az.get("done_numbers", []):
+                            tid = idx_to_id.get(str(num).strip())
+                            if tid:
+                                r = _region_of(tid)
+                                if r == "priorities":
+                                    read_result["priority_done_ids"].append(tid)
+                                elif r == "someday":
+                                    read_result["sd_done_ids"].append(tid)
+                                else:
+                                    read_result["done_item_ids"].append(tid)
                     except Exception as exc:
                         errors.append(f"Action zone LLM failed: {exc}")
                 print(f"Geometric marks: {geo}", flush=True)

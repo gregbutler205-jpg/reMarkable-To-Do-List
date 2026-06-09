@@ -106,10 +106,26 @@ def star_shape(c, cx, cy_svg, sz=22, color=ACCENT):
 # ── Layout constants ──────────────────────────────────────────────────────────
 ML, MR = 173, 1560
 
-# Column anatomy — no checkbox/arrows, wider text area
-NUM_X    = 148           # number right-align x
-TXT_X    = 168           # text / ruled-line start x  (closer since no checkbox)
-LINE_END = 1560          # text / ruled-line right edge (full width now)
+# Column anatomy
+NUM_X        = 148       # number right-align x
+TXT_X        = 168       # text / ruled-line start x
+LINE_END     = 1560      # full-width line end (Priority, NT, Someday)
+FY_LINE_END  = 1358      # shortened for FY rows — leaves room for action box
+
+# ── Right-side action box (FIXED position — never moves) ─────────────────────
+# Sits in the right margin, vertically aligned with the From Yesterday section.
+ACT_BOX_X1  = 1375      # left edge
+ACT_BOX_X2  = 1602      # right edge  (~page right margin)
+ACT_BOX_LBL = 75        # width of label column inside box
+ACT_WI_X    = ACT_BOX_X1 + ACT_BOX_LBL  # 1450 — write-in area starts here
+ACT_BOX_ROW = 52        # height of each action row
+ACT_BOX_PAD = 10        # internal top/bottom padding
+ACT_BOX_Y1  = 522       # top of box (just above FY_LABEL_Y=538)
+ACT_BOX_Y2  = ACT_BOX_Y1 + ACT_BOX_PAD + 3*ACT_BOX_ROW + ACT_BOX_PAD  # 698
+# Row y1 values (SVG coords, y=0 at top)
+ACT_ROW_PRI = ACT_BOX_Y1 + ACT_BOX_PAD                          # 532
+ACT_ROW_SD  = ACT_ROW_PRI + ACT_BOX_ROW                         # 584
+ACT_ROW_DON = ACT_ROW_SD  + ACT_BOX_ROW                         # 636
 
 # Row heights
 RH_PRI  = 60
@@ -134,13 +150,6 @@ FY_ROWS_START = 562
 SEC_TO_DIV    = 22
 DIV_TO_LABEL  = 28
 LABEL_TO_ROWS = 22
-
-# Action zone
-ACT_GAP       = 28       # sd_bot → action box top
-ACT_ROW_H     = 62       # height of each action row
-ACT_PAD       = 16       # internal vertical padding
-ACT_LBL_W    = 280       # width of the label column
-ACT_BOX_ROWS  = 2        # Priority + Someday
 
 # Done Recently
 DONE_GAP        = 20
@@ -169,12 +178,7 @@ def compute(n_fy: int) -> dict:
     sd_rows  = [sd_start + i*RH_SD for i in range(3)]
     sd_bot   = sd_rows[-1] + RH_SD
 
-    # Action zone (two rows: Priority + Someday)
-    act_box_y   = sd_bot + ACT_GAP
-    act_rows    = [act_box_y + ACT_PAD + i*ACT_ROW_H for i in range(ACT_BOX_ROWS)]
-    act_box_bot = act_rows[-1] + ACT_ROW_H + ACT_PAD
-
-    done_box_y  = act_box_bot + DONE_GAP
+    done_box_y  = sd_bot + DONE_GAP
     done_lbl_y  = done_box_y + DONE_LBL_OFF
     done_row1_y = done_lbl_y + DONE_ROW_OFF
     done_row2_y = done_row1_y + RH_DONE
@@ -187,7 +191,6 @@ def compute(n_fy: int) -> dict:
         fy_rows=fy_rows, fy_bot=fy_bot,
         nt_div=nt_div, nt_lbl=nt_lbl, nt_rows=nt_rows, nt_bot=nt_bot,
         sd_div=sd_div, sd_lbl=sd_lbl, sd_rows=sd_rows, sd_bot=sd_bot,
-        act_box_y=act_box_y, act_rows=act_rows, act_box_bot=act_box_bot,
         done_box_y=done_box_y, done_lbl_y=done_lbl_y,
         done_row1_y=done_row1_y, done_row2_y=done_row2_y,
         done_box_bot=done_box_bot,
@@ -226,6 +229,24 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         else:
             hline(c, TXT_X, cy+20, LINE_END)
 
+    # ── Right-side action box (fixed position) ────────────────────────────────
+    box_h = ACT_BOX_Y2 - ACT_BOX_Y1
+    c.setFillColor(ACT_BG); c.setStrokeColor(ACT_BORDER); c.setLineWidth(1.5)
+    c.roundRect(ACT_BOX_X1, fy(ACT_BOX_Y2), ACT_BOX_X2 - ACT_BOX_X1, box_h,
+                radius=6, stroke=1, fill=1)
+    # Row dividers
+    for div_y in (ACT_ROW_SD, ACT_ROW_DON):
+        hline(c, ACT_BOX_X1, div_y, ACT_BOX_X2, color=ACT_BORDER, lw=1)
+    # Labels + write-in lines
+    for row_y, sym, sym_color in (
+        (ACT_ROW_PRI, "★ prio", ACCENT),
+        (ACT_ROW_SD,  "⇓ park", ACCENT),
+        (ACT_ROW_DON, "✕ done", LEGEND_INK),
+    ):
+        cy = row_y + ROW_CY_OFF
+        txt(c, sym, ACT_BOX_X1 + 8, cy + 6, size=22, bold=True, color=sym_color)
+        hline(c, ACT_WI_X + 4, cy + 22, ACT_BOX_X2 - 8, color=RULE_LIGHT, lw=1)
+
     # ── From Yesterday ────────────────────────────────────────────────────────
     txt(c, "From yesterday", ML, FY_LABEL_Y, size=29, color=ACCENT, bold=True)
     for i, top in enumerate(L['fy_rows']):
@@ -234,7 +255,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         if i < len(fy_items) and fy_items[i]:
             txt(c, fy_items[i], TXT_X, cy+8, size=29, handwriting=True)
         else:
-            hline(c, TXT_X, cy+20, LINE_END)
+            hline(c, TXT_X, cy+20, FY_LINE_END)
 
     # ── New Tasks ─────────────────────────────────────────────────────────────
     hline(c, ML, L['nt_div'], MR, color=SEC_DIV)
@@ -255,25 +276,6 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
             txt(c, sd_items[i], TXT_X, cy+8, size=29, handwriting=True)
         else:
             hline(c, TXT_X, cy+20, LINE_END)
-
-    # ── Action Zone ───────────────────────────────────────────────────────────
-    act_h = L['act_box_bot'] - L['act_box_y']
-    c.setFillColor(ACT_BG); c.setStrokeColor(ACT_BORDER); c.setLineWidth(1.5)
-    c.roundRect(44, fy(L['act_box_bot']), W-88, act_h, radius=8, stroke=1, fill=1)
-
-    action_rows = [
-        ("★ → Priority", "write item #s to promote"),
-        ("⇓ → Someday",  "write item #s to park"),
-    ]
-    for ri, (label, hint) in enumerate(action_rows):
-        row_y = L['act_rows'][ri]
-        cy    = row_y + ROW_CY_OFF
-        # Label
-        txt(c, label, 68, cy + 8, size=26, bold=True, color=ACCENT)
-        # Write-in line
-        line_x1 = 68 + ACT_LBL_W
-        txt(c, hint, line_x1, cy - 6, size=19, color=RULE_LIGHT)
-        hline(c, line_x1, cy + 22, LINE_END, color=RULE_LIGHT, lw=1.5)
 
     # ── Done Recently ─────────────────────────────────────────────────────────
     done_h = L['done_box_bot'] - L['done_box_y']
@@ -297,9 +299,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
 
     # ── Footer ────────────────────────────────────────────────────────────────
     hline(c, ML, L['ftr_rule'], MR, color=FTR_RULE)
-    leg = ("Cross out = done   ·   "
-           "Write # in ★→Priority box = promote   ·   "
-           "Write # in ⇓→Someday box = park   ·   "
+    leg = ("Action box (top right): write item # in ★prio / ⇓park / ✕done row   ·   "
            "no mark = carries forward")
     txt(c, leg, ML, L['legend_y'], size=22, color=LEGEND_INK)
 
@@ -308,53 +308,41 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
 def region_map(n_fy: int) -> dict:
     L = compute(n_fy)
     return {
-        "_note": "v3 template. Marks: strikethrough=done, write # in action zone=move.",
+        "_note": "v4 template. Action box top-right (fixed). Write item # in row.",
         "page": {"w": W, "h": H},
-        "columns": {"number_right_x": NUM_X, "text_x": TXT_X, "line_end_x": LINE_END},
+        "columns": {"number_right_x": NUM_X, "text_x": TXT_X,
+                    "line_end_x": LINE_END, "fy_line_end_x": FY_LINE_END},
         "row_heights": {"priorities": RH_PRI, "from_yesterday": RH_FY,
                         "new_tasks": RH_NT, "someday": RH_SD},
+        # ── FIXED action box ─────────────────────────────────────────────────
+        "action_box": {
+            "fixed": True,
+            "x1": ACT_BOX_X1, "x2": ACT_BOX_X2,
+            "write_in_x1": ACT_WI_X,
+            "y1": ACT_BOX_Y1, "y2": ACT_BOX_Y2,
+            "priority_row": {"y1": ACT_ROW_PRI, "y2": ACT_ROW_SD,  "label": "★ prio"},
+            "someday_row":  {"y1": ACT_ROW_SD,  "y2": ACT_ROW_DON, "label": "⇓ park"},
+            "done_row":     {"y1": ACT_ROW_DON, "y2": ACT_BOX_Y2,  "label": "✕ done"},
+            "note": ("Write item numbers in the matching row. "
+                     "1-N for From Yesterday/New Tasks, "
+                     "P1-P5 for Priority, S1-S3 for Someday."),
+        },
         "sections": {
             "header":        {"fixed": True, "y1": 0, "y2": 108},
             "priorities":    {"fixed": True, "y1": PRI_BOX_Y, "y2": PRI_BOTTOM,
-                              "label_y": PRI_LABEL_Y,
                               "rows": [{"n": f"P{i+1}", "y1": t, "y2": t+RH_PRI}
-                                       for i, t in enumerate(PRI_ROW_TOPS)],
-                              "marks": {"done": "strikethrough text"}},
-            "from_yesterday":{"fixed": "label+first_row fixed; bottom varies",
-                              "label_y": FY_LABEL_Y, "first_row_y": FY_ROWS_START,
-                              "y1": FY_LABEL_Y, "y2": L['fy_bot'],
+                                       for i, t in enumerate(PRI_ROW_TOPS)]},
+            "from_yesterday":{"y1": FY_LABEL_Y, "y2": L['fy_bot'],
                               "rows": [{"n": i+1, "y1": t, "y2": t+RH_FY}
-                                       for i, t in enumerate(L['fy_rows'])],
-                              "marks": {"done": "strikethrough text",
-                                        "promote": "write number in action zone priority row",
-                                        "demote":  "write number in action zone someday row"}},
-            "new_tasks":     {"fixed": False, "y1": L['nt_lbl'], "y2": L['nt_bot'],
+                                       for i, t in enumerate(L['fy_rows'])]},
+            "new_tasks":     {"y1": L['nt_lbl'], "y2": L['nt_bot'],
                               "rows": [{"n": n_fy+1+i, "y1": t, "y2": t+RH_NT}
-                                       for i, t in enumerate(L['nt_rows'])],
-                              "marks": {"done": "strikethrough text",
-                                        "promote": "write number in action zone priority row",
-                                        "demote":  "write number in action zone someday row",
-                                        "carry":   "no mark → From yesterday tomorrow"}},
-            "someday":       {"fixed": False, "y1": L['sd_lbl'], "y2": L['sd_bot'],
+                                       for i, t in enumerate(L['nt_rows'])]},
+            "someday":       {"y1": L['sd_lbl'], "y2": L['sd_bot'],
                               "rows": [{"n": f"S{i+1}", "y1": t, "y2": t+RH_SD}
-                                       for i, t in enumerate(L['sd_rows'])],
-                              "marks": {"done":    "strikethrough text",
-                                        "promote": "write S# in action zone priority row"}},
-            "action_zone":   {"fixed": False,
-                              "y1": L['act_box_y'], "y2": L['act_box_bot'],
-                              "priority_row": {"y1": L['act_rows'][0],
-                                               "y2": L['act_rows'][0] + ACT_ROW_H,
-                                               "label": "★ → Priority"},
-                              "someday_row":  {"y1": L['act_rows'][1],
-                                               "y2": L['act_rows'][1] + ACT_ROW_H,
-                                               "label": "⇓ → Someday"},
-                              "note": ("Numbers written here move items. "
-                                       "Use item number (1,2,3…) for FY/New, "
-                                       "S1/S2/S3 for Someday, P1-P5 for Priority.")},
-            "done_recently": {"fixed": False, "y1": L['done_box_y'],
-                              "y2": L['done_box_bot'],
-                              "note": "INERT — reader must ignore entirely"},
-            "footer":        {"fixed": False, "y1": L['ftr_rule'], "y2": H},
+                                       for i, t in enumerate(L['sd_rows'])]},
+            "done_recently": {"y1": L['done_box_y'], "y2": L['done_box_bot'],
+                              "note": "INERT"},
         },
     }
 

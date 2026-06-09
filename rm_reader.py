@@ -113,8 +113,13 @@ def _centroid(pts: list[tuple[float, float]]) -> tuple[float, float]:
 def _compute_scale(strokes, region_bounds) -> tuple[float, float]:
     """
     Work out the scale from .rm coordinate space to PDF screen space.
-    PDF screen space: 0,0 = top-left; x in [0, W]; y in [0, H] (SVG convention).
-    rm coordinate space: same orientation but possibly different range.
+    PDF screen space: 0,0 = top-left; x in [0,W]; y in [0,H] (SVG convention,
+    same orientation as .rm — both have y=0 at top).
+
+    We can NOT use max(actual_strokes) to infer the rm page size because the
+    user may have only written in a small area.  Instead we use known device
+    dimensions: reMarkable Paper Pro uses 1620×2160 natively; older devices
+    use 1404×1872.  We pick the bucket whose ratio best fits the strokes seen.
     """
     page = region_bounds.get("page", {})
     page_w = page.get("w", 1620)
@@ -125,13 +130,29 @@ def _compute_scale(strokes, region_bounds) -> tuple[float, float]:
 
     all_x = [p[0] for pts in strokes for p in pts]
     all_y = [p[1] for pts in strokes for p in pts]
-    rm_max_x = max(all_x) if all_x else page_w
-    rm_max_y = max(all_y) if all_y else page_h
+    obs_max_x = max(all_x)
+    obs_max_y = max(all_y)
 
-    # Only rescale if the rm range differs by more than 10%
-    sx = page_w / rm_max_x if rm_max_x > 10 and abs(rm_max_x - page_w) / page_w > 0.10 else 1.0
-    sy = page_h / rm_max_y if rm_max_y > 10 and abs(rm_max_y - page_h) / page_h > 0.10 else 1.0
-    return sx, sy
+    # Known rm device page sizes
+    KNOWN = [
+        (1620, 2160),   # Paper Pro (native)
+        (1404, 1872),   # reMarkable 1 / 2
+    ]
+    best_sx, best_sy = 1.0, 1.0
+    best_err = float("inf")
+    for rm_w, rm_h in KNOWN:
+        sx = page_w / rm_w
+        sy = page_h / rm_h
+        # How well does scaling the observed strokes fit within page bounds?
+        err = abs(obs_max_x * sx - page_w) + abs(obs_max_y * sy - page_h)
+        if err < best_err:
+            best_err = err
+            best_sx, best_sy = sx, sy
+
+    # If scales are within 2% of 1.0, don't bother scaling
+    if abs(best_sx - 1.0) < 0.02 and abs(best_sy - 1.0) < 0.02:
+        return 1.0, 1.0
+    return best_sx, best_sy
 
 
 def _scale_strokes(strokes, sx, sy) -> list[list[tuple[float, float]]]:
@@ -192,80 +213,83 @@ def _strokes_in_ybands(scaled_strokes, y1: float, y2: float,
 
 def render_action_zone_image(scaled_strokes: list, region_bounds: dict) -> bytes | None:
     """
-    Render the strokes that fall inside the action zone into a small PNG (bytes).
-    Returns None if there are no strokes in the zone.
-
-    The image has two labeled rows:
-      Row 1 — ★ → Priority   (strokes centroid in priority_row y-band)
-      Row 2 — ⇓ → Someday    (strokes centroid in someday_row y-band)
-
-    This tiny image is sent directly to the LLM for number transcription,
-    bypassing the full-page compositing alignment problem.
+    Render strokes inside the fixed right-side action box into a small PNG.
+    Only strokes whose centroid falls within the write-in x range (past the label
+    column) are rendered — this prevents the labels themselves from being misread.
+    Returns None if the box has no strokes.
     """
     try:
         from PIL import Image, ImageDraw
     except ImportError:
         return None
 
-    secs = region_bounds.get("sections", region_bounds)
-    az   = secs.get("action_zone", {})
-    if not az:
+    ab = region_bounds.get("action_box", {})
+    if not ab:
         return None
 
-    pri_row = az.get("priority_row", {})
-    sd_row  = az.get("someday_row",  {})
+    ab_x1  = ab.get("x1",          1375)
+    ab_x2  = ab.get("x2",          1602)
+    wi_x1  = ab.get("write_in_x1", 1450)
+    ab_y1  = ab.get("y1",           522)
+    ab_y2  = ab.get("y2",           698)
 
-    az_y1 = az.get("y1", 0)
-    az_y2 = az.get("y2", 0)
-    if az_y1 == az_y2:
+    pri_row = ab.get("priority_row", {})
+    sd_row  = ab.get("someday_row",  {})
+    don_row = ab.get("done_row",     {})
+
+    # Filter: centroid must be inside the box (y) and in the write-in area (x)
+    def _in_wi(pts):
+        cx = sum(p[0] for p in pts) / len(pts)
+        cy = sum(p[1] for p in pts) / len(pts)
+        return ab_y1 <= cy <= ab_y2 and cx >= wi_x1
+
+    wi_strokes = [pts for pts in scaled_strokes if len(pts) > 0 and _in_wi(pts)]
+    if not wi_strokes:
+        print("rm_reader: no strokes in action box write-in area", flush=True)
         return None
 
-    # Filter strokes to action zone
-    az_strokes = _strokes_in_ybands(scaled_strokes, az_y1, az_y2)
-    if not az_strokes:
-        return None
+    print(f"rm_reader: {len(wi_strokes)} strokes in action box write-in area", flush=True)
 
-    print(f"rm_reader: {len(az_strokes)} strokes in action zone", flush=True)
+    # Render: write-in area only (wi_x1 → ab_x2)
+    zone_w = ab_x2 - wi_x1
+    zone_h = ab_y2 - ab_y1
+    RENDER_W = 500
+    rsx = RENDER_W / zone_w
+    rsy = rsx
+    LABEL_W = 80
+    img_w = RENDER_W + LABEL_W
+    img_h = max(120, int(zone_h * rsy) + 20)
 
-    # Write-in area: after the label column (~344) to the right margin (~1556)
-    WI_X1, WI_X2 = 344.0, 1556.0
-    zone_w = WI_X2 - WI_X1
-    zone_h = az_y2 - az_y1
+    img  = Image.new("RGB", (img_w, img_h), "white")
+    draw = ImageDraw.Draw(img)
 
-    # Scale to a reasonable rendering size
-    RENDER_W = 800
-    sx = RENDER_W / zone_w
-    sy = sx  # keep aspect ratio
+    # Row dividers + labels
+    for row, label in (
+        (pri_row, "★ prio:"),
+        (sd_row,  "⇓ park:"),
+        (don_row, "✕ done:"),
+    ):
+        if not row:
+            continue
+        ry1 = row.get("y1", ab_y1)
+        ry2 = row.get("y2", ab_y1 + 52)
+        div_px = int((ry2 - ab_y1) * rsy) + 10
+        lbl_px = int((ry1 - ab_y1) * rsy) + 14
+        draw.line([(0, div_px), (img_w, div_px)], fill=(200, 200, 200), width=1)
+        draw.text((4, lbl_px), label, fill=(80, 80, 80))
 
-    img_w = RENDER_W + 160           # +160 for row labels on the left
-    img_h = max(100, int(zone_h * sy) + 20)
-    img   = Image.new("RGB", (img_w, img_h), "white")
-    draw  = ImageDraw.Draw(img)
-
-    # Row divider between Priority and Someday
-    if pri_row and sd_row:
-        div_y = int((pri_row.get("y2", az_y1 + 62) - az_y1) * sy + 10)
-        draw.line([(0, div_y), (img_w, div_y)], fill=(180, 180, 180), width=1)
-
-    # Row labels
-    draw.text(( 5, 10),       "★ Priority:",  fill=(80,  80,  80))
-    if pri_row and sd_row:
-        label_y = int((pri_row.get("y2", az_y1 + 62) - az_y1) * sy + 14)
-        draw.text(( 5, label_y), "⇓ Someday:", fill=(80,  80,  80))
-
-    # Draw strokes (clipped to write-in x range)
-    LABEL_OFF = 160
-    for pts in az_strokes:
-        scaled = [
-            (int((p[0] - WI_X1) * sx) + LABEL_OFF,
-             int((p[1] - az_y1)  * sy) + 10)
+    # Draw strokes
+    for pts in wi_strokes:
+        coords = [
+            (int((p[0] - wi_x1) * rsx) + LABEL_W,
+             int((p[1] - ab_y1) * rsy) + 10)
             for p in pts
         ]
-        scaled = [(max(LABEL_OFF, x), max(0, min(img_h - 1, y))) for x, y in scaled]
-        if len(scaled) >= 2:
-            draw.line(scaled, fill="black", width=3)
-        elif len(scaled) == 1:
-            x, y = scaled[0]
+        coords = [(max(LABEL_W, x), max(0, min(img_h - 1, y))) for x, y in coords]
+        if len(coords) >= 2:
+            draw.line(coords, fill="black", width=3)
+        elif coords:
+            x, y = coords[0]
             draw.ellipse([x-3, y-3, x+3, y+3], fill="black")
 
     buf = io.BytesIO()
@@ -344,13 +368,13 @@ def detect_marks(rm_path: str, region_bounds: dict, items: list) -> dict:
             elif region == "someday":
                 result["sd_done_ids"].append(tid)
 
-    # ── Action-zone image (for LLM to read promote/demote numbers) ────────
+    # ── Action-box image (for LLM to read promote/demote/done numbers) ───
     az_png = render_action_zone_image(scaled, region_bounds)
     if az_png:
         result["_action_zone_png"] = az_png
-        print(f"rm_reader: action zone image rendered ({len(az_png)} bytes)", flush=True)
+        print(f"rm_reader: action box image rendered ({len(az_png)} bytes)", flush=True)
     else:
-        print("rm_reader: no action-zone strokes detected", flush=True)
+        print("rm_reader: no action-box strokes detected", flush=True)
 
     print(f"rm_reader: final → done={result['done_item_ids']}  "
           f"pri_done={result['priority_done_ids']}  "

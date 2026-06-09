@@ -15,12 +15,10 @@ import config
 _PROMPT = """\
 You are reading a reMarkable tablet to-do page. Return ONLY strict JSON — no prose, no markdown.
 
-INTERACTION MODEL (v3 — read carefully):
-  • DONE:    user drew a line THROUGH the printed task text (strikethrough).
-  • PROMOTE: user wrote one or more item numbers in the "★ → Priority" action zone.
-  • DEMOTE:  user wrote one or more item numbers in the "⇓ → Someday" action zone.
+INTERACTION MODEL (v4 — read carefully):
   • NEW TASK: user wrote new text on a blank ruled line in the "New tasks" section.
-  There are NO checkboxes or arrow buttons to look for. Marks are strikethroughs and written numbers only.
+  • MARKS: handled separately via the action box — ignore any strikethroughs or numbers
+    written near tasks; focus only on transcribing new handwritten text.
 
 ITEM NUMBERING:
   • From Yesterday items:  printed as  1.  2.  3.  etc.
@@ -28,9 +26,8 @@ ITEM NUMBERING:
   • Someday items:         printed as  S1.  S2.  S3.
   • Priority items:        printed as  P1.  P2.  P3.  P4.  P5.
 
-ACTION ZONE (near the bottom, amber/yellow background box):
-  Row 1 — "★ → Priority":  any numbers written here = those items move to Priority.
-  Row 2 — "⇓ → Someday":   any numbers written here = those items move to Someday.
+ACTION BOX (small amber box in the top-right corner):
+  Ignore — handled separately. Do NOT report marks from here.
 
 KNOWN PRINTED ITEMS:
 {items_json}
@@ -130,25 +127,28 @@ def _read_gemini(img_b64: str, prompt: str) -> dict:
 # ── Public interface ──────────────────────────────────────────────────────────
 
 _ACTION_ZONE_PROMPT = """\
-This image shows the handwriting a user made inside two rows of a to-do page action zone.
+This image shows handwriting the user wrote inside a small action box on their to-do page.
+The box has three rows:
 
-Row labeled "★ Priority:" — numbers written here mean PROMOTE those items to Priority.
-Row labeled "⇓ Someday:"  — numbers written here mean DEMOTE those items to Someday.
+  "★ prio:"  — numbers written here mean PROMOTE those items to Priority.
+  "⇓ park:"  — numbers written here mean DEMOTE / park those items to Someday.
+  "✕ done:"  — numbers written here mean mark those items as DONE.
 
-Item numbering:
-  • Plain numbers (1, 2, 3…) refer to "From Yesterday" / New Tasks items.
-  • S1, S2, S3  refer to Someday items.
-  • P1–P5       refer to Priority items.
+Item numbering on the page:
+  • Plain numbers (1, 2, 3…) = From Yesterday or New Tasks items.
+  • P1–P5 = Priority items.
+  • S1–S3 = Someday items.
 
-Known items on the page:
+Known items:
 {items_json}
 
 Return ONLY strict JSON — no prose, no markdown fences:
 {{
-  "promote_numbers": ["1", "3", "S2"],
-  "demote_numbers":  ["P1", "2"]
+  "promote_numbers": ["1", "S2"],
+  "demote_numbers":  ["P1"],
+  "done_numbers":    ["2", "3"]
 }}
-Empty arrays if you see nothing written (or can't read it confidently).
+Use empty arrays if a row has nothing written or you cannot read it confidently.
 """
 
 
@@ -178,6 +178,7 @@ def read_action_zone(png_bytes: bytes, known_items: list,
     return {
         "promote_numbers": raw.get("promote_numbers", []),
         "demote_numbers":  raw.get("demote_numbers",  []),
+        "done_numbers":    raw.get("done_numbers",    []),
     }
 
 
