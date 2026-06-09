@@ -86,18 +86,59 @@ def main():
             region_bounds = cp.get("region_bounds", {})
             print(f"Known items: {known_items}", flush=True)
 
-            # ── Geometric mark detection (checkbox / arrows) ──────────────
+            # ── Geometric mark detection (v3: strikethrough + action zone) ─
             rm_path = rmapi_client.extract_rm_file(tmpdir)
             if rm_path:
                 geo = rm_reader.detect_marks(rm_path, region_bounds, known_items)
+                # Copy standard mark fields (ignore private _ keys)
                 for k, v in geo.items():
-                    if v:
+                    if not k.startswith("_") and v:
                         read_result[k] = v
+
+                # ── Action zone: LLM reads the stroke image ───────────────
+                az_png = geo.get("_action_zone_png")
+                if az_png:
+                    try:
+                        az = llm_reader.read_action_zone(
+                            az_png, known_items, provider=provider
+                        )
+                        print(f"Action zone LLM: {az}", flush=True)
+                        # Build a display-index → task_id lookup
+                        idx_to_id = {
+                            str(item["display_index"]): item["task_id"]
+                            for item in known_items
+                        }
+                        for num in az.get("promote_numbers", []):
+                            tid = idx_to_id.get(str(num).strip())
+                            if tid:
+                                item_region = next(
+                                    (i["region"] for i in known_items
+                                     if i["task_id"] == tid), ""
+                                )
+                                if item_region == "someday":
+                                    read_result["sd_promote_ids"].append(tid)
+                                else:
+                                    read_result["promote_item_ids"].append(tid)
+                        for num in az.get("demote_numbers", []):
+                            tid = idx_to_id.get(str(num).strip())
+                            if tid:
+                                item_region = next(
+                                    (i["region"] for i in known_items
+                                     if i["task_id"] == tid), ""
+                                )
+                                if item_region == "priorities":
+                                    read_result["priority_demote_ids"].append(tid)
+                                else:
+                                    read_result["demote_item_ids"].append(tid)
+                    except Exception as exc:
+                        errors.append(f"Action zone LLM failed: {exc}")
                 print(f"Geometric marks: {geo}", flush=True)
             else:
                 print("No .rm file available for geometric detection", flush=True)
 
-            # ── LLM: new handwritten text transcription only ──────────────
+            # ── LLM: full-page read for new handwritten text ──────────────
+            # (We still send the full page image, but only use it for
+            #  new_items / priority_items transcription, not for marks.)
             try:
                 llm_result = llm_reader.read_page(
                     images[0], known_items, region_bounds, provider=provider
@@ -106,7 +147,7 @@ def main():
                 read_result["new_items"]      = llm_result.get("new_items", [])
                 read_result["priority_items"] = llm_result.get("priority_items", [])
                 read_result["uncertain"]      = llm_result.get("uncertain", [])
-                # Use LLM marks only as fallback if geometric found nothing
+                # Use full-page LLM marks only as fallback if geometric found nothing
                 for k in ("done_item_ids", "promote_item_ids", "demote_item_ids",
                           "sd_done_ids", "sd_promote_ids",
                           "priority_done_ids", "priority_demote_ids"):

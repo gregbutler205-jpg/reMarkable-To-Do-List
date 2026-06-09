@@ -129,6 +129,58 @@ def _read_gemini(img_b64: str, prompt: str) -> dict:
 
 # ── Public interface ──────────────────────────────────────────────────────────
 
+_ACTION_ZONE_PROMPT = """\
+This image shows the handwriting a user made inside two rows of a to-do page action zone.
+
+Row labeled "★ Priority:" — numbers written here mean PROMOTE those items to Priority.
+Row labeled "⇓ Someday:"  — numbers written here mean DEMOTE those items to Someday.
+
+Item numbering:
+  • Plain numbers (1, 2, 3…) refer to "From Yesterday" / New Tasks items.
+  • S1, S2, S3  refer to Someday items.
+  • P1–P5       refer to Priority items.
+
+Known items on the page:
+{items_json}
+
+Return ONLY strict JSON — no prose, no markdown fences:
+{{
+  "promote_numbers": ["1", "3", "S2"],
+  "demote_numbers":  ["P1", "2"]
+}}
+Empty arrays if you see nothing written (or can't read it confidently).
+"""
+
+
+def read_action_zone(png_bytes: bytes, known_items: list,
+                     provider: str | None = None) -> dict:
+    """
+    Send the action-zone stroke image to the LLM and return
+    {promote_numbers: [...], demote_numbers: [...]} as raw display-index strings.
+    """
+    provider = provider or config.MODEL_PROVIDER
+    img_b64  = base64.standard_b64encode(png_bytes).decode()
+    prompt   = _ACTION_ZONE_PROMPT.format(
+        items_json=json.dumps(known_items, indent=2)
+    )
+
+    try:
+        if provider == "claude":
+            raw = _read_claude(img_b64, prompt)
+        elif provider == "gemini":
+            raw = _read_gemini(img_b64, prompt)
+        else:
+            raise ValueError(f"Unknown MODEL_PROVIDER: {provider!r}")
+    except Exception as exc:
+        print(f"llm_reader.read_action_zone failed: {exc}", flush=True)
+        return {"promote_numbers": [], "demote_numbers": []}
+
+    return {
+        "promote_numbers": raw.get("promote_numbers", []),
+        "demote_numbers":  raw.get("demote_numbers",  []),
+    }
+
+
 def read_page(image_path: str, known_items: list, region_bounds: dict,
               provider: str | None = None) -> dict:
     """
