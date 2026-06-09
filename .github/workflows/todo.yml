@@ -37,6 +37,13 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      - name: Download handwriting font
+        run: |
+          mkdir -p fonts
+          [ -f fonts/Kalam-Regular.ttf ] || \
+            curl -L "https://github.com/google/fonts/raw/main/ofl/kalam/Kalam-Regular.ttf" \
+                 -o fonts/Kalam-Regular.ttf
+
       - name: Install rmapi
         run: |
           curl -Lo rmapi.tar.gz \

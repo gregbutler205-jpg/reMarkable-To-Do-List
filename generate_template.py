@@ -19,7 +19,27 @@ number written in an action zone is unambiguous:
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 import math, json, os
+
+# ── Font setup ────────────────────────────────────────────────────────────────
+_FONT_TASK = 'Helvetica'          # fallback if TTF not found
+_FONT_TASK_BOLD = 'Helvetica-Bold'
+
+def _load_fonts():
+    global _FONT_TASK, _FONT_TASK_BOLD
+    here = os.path.dirname(os.path.abspath(__file__))
+    ttf  = os.path.join(here, 'fonts', 'Kalam-Regular.ttf')
+    if os.path.exists(ttf):
+        try:
+            pdfmetrics.registerFont(TTFont('Kalam', ttf))
+            _FONT_TASK      = 'Kalam'
+            _FONT_TASK_BOLD = 'Kalam'   # Kalam has no bold; use regular
+        except Exception as e:
+            print(f"Font load warning: {e}")
+
+_load_fonts()
 
 # ── Page ──────────────────────────────────────────────────────────────────────
 W, H = 1620, 2160
@@ -49,8 +69,12 @@ def hline(c, x1, y_svg, x2, color=RULE_LIGHT, lw=1.5):
     c.setStrokeColor(color); c.setLineWidth(lw)
     c.line(x1, fy(y_svg), x2, fy(y_svg))
 
-def txt(c, s, x, y_svg, size=28, color=INK, bold=False, align='left'):
-    c.setFont('Helvetica-Bold' if bold else 'Helvetica', size)
+def txt(c, s, x, y_svg, size=28, color=INK, bold=False, align='left',
+        handwriting=False):
+    if handwriting:
+        c.setFont(_FONT_TASK, size)
+    else:
+        c.setFont('Helvetica-Bold' if bold else 'Helvetica', size)
     c.setFillColor(color)
     pfy = fy(y_svg)
     if align == 'right': c.drawRightString(x, pfy, s)
@@ -198,7 +222,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         cy = top + ROW_CY_OFF
         txt(c, f"P{i+1}.", NUM_X, cy+8, size=25, bold=True, align='right')
         if i < len(priority_items) and priority_items[i]:
-            txt(c, priority_items[i], TXT_X, cy+8, size=28)
+            txt(c, priority_items[i], TXT_X, cy+8, size=28, handwriting=True)
         else:
             hline(c, TXT_X, cy+20, LINE_END)
 
@@ -208,7 +232,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         cy = top + ROW_CY_OFF
         txt(c, f"{i+1}.", NUM_X, cy+8, size=25, bold=True, align='right')
         if i < len(fy_items) and fy_items[i]:
-            txt(c, fy_items[i], TXT_X, cy+8, size=28)
+            txt(c, fy_items[i], TXT_X, cy+8, size=28, handwriting=True)
         else:
             hline(c, TXT_X, cy+20, LINE_END)
 
@@ -228,7 +252,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         cy = top + ROW_CY_OFF
         txt(c, f"S{i+1}.", NUM_X, cy+8, size=25, bold=True, align='right')
         if i < len(sd_items) and sd_items[i]:
-            txt(c, sd_items[i], TXT_X, cy+8, size=28)
+            txt(c, sd_items[i], TXT_X, cy+8, size=28, handwriting=True)
         else:
             hline(c, TXT_X, cy+20, LINE_END)
 
@@ -262,13 +286,13 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         left_text, right_text = done_items[ri] if ri < len(done_items) else ("", "")
         if left_text:
             checked_box(c, 64, row_y)
-            txt(c, left_text, 108, row_cy, size=25, color=DONE_INK)
-            end_x = 108 + int(len(left_text) * 13.4)
+            txt(c, left_text, 108, row_cy, size=25, color=DONE_INK, handwriting=True)
+            end_x = 108 + int(len(left_text) * 15)
             hline(c, 108, row_cy-5, min(end_x, 800), color=DONE_INK)
         if right_text:
             checked_box(c, 840, row_y)
-            txt(c, right_text, 884, row_cy, size=25, color=DONE_INK)
-            end_x = 884 + int(len(right_text) * 13.4)
+            txt(c, right_text, 884, row_cy, size=25, color=DONE_INK, handwriting=True)
+            end_x = 884 + int(len(right_text) * 15)
             hline(c, 884, row_cy-5, min(end_x, 1550), color=DONE_INK)
 
     # ── Footer ────────────────────────────────────────────────────────────────
