@@ -26,6 +26,7 @@ import llm_reader
 import notifier
 import page_renderer
 import pdf_to_image
+import rm_reader
 import rmapi_client
 from sheet_store import SheetStore
 
@@ -77,22 +78,43 @@ def main():
 
         page_image_for_email = None
         if cp and images:
-            import os, shutil
+            import os
             img_size = os.path.getsize(images[0])
             print(f"Page image: {images[0]}, size={img_size} bytes", flush=True)
             page_image_for_email = images[0]
             known_items   = cp.get("items", [])
             region_bounds = cp.get("region_bounds", {})
             print(f"Known items: {known_items}", flush=True)
+
+            # ── Geometric mark detection (checkbox / arrows) ──────────────
+            rm_path = rmapi_client.extract_rm_file(tmpdir)
+            if rm_path:
+                geo = rm_reader.detect_marks(rm_path, region_bounds, known_items)
+                for k, v in geo.items():
+                    if v:
+                        read_result[k] = v
+                print(f"Geometric marks: {geo}", flush=True)
+            else:
+                print("No .rm file available for geometric detection", flush=True)
+
+            # ── LLM: new handwritten text transcription only ──────────────
             try:
-                read_result = llm_reader.read_page(
+                llm_result = llm_reader.read_page(
                     images[0], known_items, region_bounds, provider=provider
                 )
-                print(f"LLM result: {read_result}", flush=True)
+                print(f"LLM result: {llm_result}", flush=True)
+                read_result["new_items"]      = llm_result.get("new_items", [])
+                read_result["priority_items"] = llm_result.get("priority_items", [])
+                read_result["uncertain"]      = llm_result.get("uncertain", [])
+                # Use LLM marks only as fallback if geometric found nothing
+                for k in ("done_item_ids", "promote_item_ids", "demote_item_ids",
+                          "sd_done_ids", "sd_promote_ids",
+                          "priority_done_ids", "priority_demote_ids"):
+                    if not read_result[k] and llm_result.get(k):
+                        read_result[k] = llm_result[k]
             except Exception as exc:
                 errors.append(f"LLM read failed: {exc}")
                 notifier.send_alert("LLM read failed", traceback.format_exc())
-                sys.exit(1)
 
         # ── 4. Reconcile ──────────────────────────────────────────────────────
         today = str(date.today())

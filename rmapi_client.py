@@ -84,6 +84,28 @@ def pull_as_pdf(dest_dir: str) -> str:
     return placeholder
 
 
+def extract_rm_file(dest_dir: str) -> str | None:
+    """
+    Extract the first .rm handwriting file from the cached .rmdoc in dest_dir.
+    Returns the local path to the .rm file, or None if not found.
+    The .rmdoc must already have been downloaded by pull_as_pdf().
+    """
+    import zipfile
+    rmdoc = next(Path(dest_dir).glob("*.rmdoc"), None)
+    if not rmdoc:
+        return None
+    with zipfile.ZipFile(rmdoc) as z:
+        rm_names = [n for n in z.namelist() if n.endswith(".rm")]
+        if not rm_names:
+            return None
+        rm_name = sorted(rm_names)[0]
+        out_path = str(Path(dest_dir) / "page.rm")
+        with z.open(rm_name) as src, open(out_path, "wb") as dst:
+            dst.write(src.read())
+        print(f"extract_rm_file: extracted {rm_name} → {out_path}", flush=True)
+        return out_path
+
+
 def _rmdoc_to_pdf(rmdoc_path: str, out_pdf: str):
     """
     Convert a .rmdoc file to a PDF with handwriting overlaid on the base template.
