@@ -183,11 +183,10 @@ def main():
         store.increment_rollover(carry_ids)
 
         # ── 5–6. Render + push ────────────────────────────────────────────────
-        # Mark processed ONLY after a successful render so that if render
-        # fails the next run re-reads this page instead of hitting the gate.
+        # NOTE: mark_processed() is intentionally NOT called here.
+        # set_current_page() inside _render_and_push() replaces the record
+        # with processed=False, so the gate never gets stuck again.
         pdf_path = _render_and_push(store, tmpdir, errors, provider, skip_email=True)
-        if pdf_path:
-            store.mark_processed()
 
         # ── 7. Notify + log ───────────────────────────────────────────────────
         uncertain = read_result.get("uncertain", [])

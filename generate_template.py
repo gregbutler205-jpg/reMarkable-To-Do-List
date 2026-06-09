@@ -222,7 +222,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         cy = top + ROW_CY_OFF
         txt(c, f"P{i+1}.", NUM_X, cy+8, size=25, bold=True, align='right')
         if i < len(priority_items) and priority_items[i]:
-            txt(c, priority_items[i], TXT_X, cy+8, size=28, handwriting=True)
+            txt(c, priority_items[i], TXT_X, cy+8, size=29, handwriting=True)
         else:
             hline(c, TXT_X, cy+20, LINE_END)
 
@@ -232,7 +232,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         cy = top + ROW_CY_OFF
         txt(c, f"{i+1}.", NUM_X, cy+8, size=25, bold=True, align='right')
         if i < len(fy_items) and fy_items[i]:
-            txt(c, fy_items[i], TXT_X, cy+8, size=28, handwriting=True)
+            txt(c, fy_items[i], TXT_X, cy+8, size=29, handwriting=True)
         else:
             hline(c, TXT_X, cy+20, LINE_END)
 
@@ -252,7 +252,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
         cy = top + ROW_CY_OFF
         txt(c, f"S{i+1}.", NUM_X, cy+8, size=25, bold=True, align='right')
         if i < len(sd_items) and sd_items[i]:
-            txt(c, sd_items[i], TXT_X, cy+8, size=28, handwriting=True)
+            txt(c, sd_items[i], TXT_X, cy+8, size=29, handwriting=True)
         else:
             hline(c, TXT_X, cy+20, LINE_END)
 
