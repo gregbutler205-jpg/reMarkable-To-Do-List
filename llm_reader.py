@@ -13,47 +13,45 @@ import config
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
 _PROMPT = """\
-You are reading a scanned reMarkable tablet to-do page. Return ONLY strict JSON — no prose, no markdown.
+You are reading a reMarkable tablet to-do page. Return ONLY strict JSON — no prose, no markdown.
 
-COORDINATE SYSTEM: The page is {W}×{H} points, origin top-left. Each item has row_y1/row_y2 \
-giving its vertical band. The image may be scaled from these coordinates but proportions are preserved.
+INTERACTION MODEL (v3 — read carefully):
+  • DONE:    user drew a line THROUGH the printed task text (strikethrough).
+  • PROMOTE: user wrote one or more item numbers in the "★ → Priority" action zone.
+  • DEMOTE:  user wrote one or more item numbers in the "⇓ → Someday" action zone.
+  • NEW TASK: user wrote new text on a blank ruled line in the "New tasks" section.
+  There are NO checkboxes or arrow buttons to look for. Marks are strikethroughs and written numbers only.
 
-TEMPLATE STRUCTURE (columns, left→right on every row):
-  • Number label (e.g. "1.")    — far left
-  • Checkbox square             — at x≈{CHK_X}, size≈{CHK_SZ}px  ← "done" mark goes here
-  • Task text                   — printed text starts at x≈{TXT_X}
-  • UP arrow triangle  ▲        — at x≈{UP_X}  ← "promote" mark goes here
-  • DOWN arrow triangle ▽       — at x≈{DN_X}  ← "demote" mark goes here
+ITEM NUMBERING:
+  • From Yesterday items:  printed as  1.  2.  3.  etc.
+  • New Tasks rows:        continue numbering from From Yesterday (e.g. 6. 7. 8. …)
+  • Someday items:         printed as  S1.  S2.  S3.
+  • Priority items:        printed as  P1.  P2.  P3.  P4.  P5.
 
-HOW MARKS LOOK (any of these counts as "marked"):
-  • Checkbox done: tick ✓, X, check, solid fill, scribble INSIDE or OVER the square, or text struck through
-  • UP/DOWN arrow marked: solid fill (blacked in), tick, X, or any ink ON or INSIDE the small triangle
+ACTION ZONE (near the bottom, amber/yellow background box):
+  Row 1 — "★ → Priority":  any numbers written here = those items move to Priority.
+  Row 2 — "⇓ → Someday":   any numbers written here = those items move to Someday.
 
-KNOWN PRINTED ITEMS — match marks to these by vertical position (row_y1…row_y2):
+KNOWN PRINTED ITEMS:
 {items_json}
 
 REGION BOUNDS (for spatial reference):
 {regions_json}
 
-CLASSIFICATION RULES:
-  from_yesterday / new_tasks rows:
-    checkbox or strikethrough → done_item_ids
-    UP arrow marked           → promote_item_ids  (→ Priorities)
-    DOWN arrow marked         → demote_item_ids   (→ Someday)
-  priorities rows:
-    checkbox or strikethrough → priority_done_ids
-    DOWN arrow marked         → priority_demote_ids (→ From Yesterday)
-  someday rows:
-    checkbox or strikethrough → sd_done_ids
-    UP arrow marked           → sd_promote_ids   (→ From Yesterday)
+INSTRUCTIONS:
+1. Scan every printed task row. If user drew a line through the text → add to done list.
+2. Read any handwritten numbers in the "★ → Priority" zone → promote_item_ids / sd_promote_ids.
+3. Read any handwritten numbers in the "⇓ → Someday" zone → demote_item_ids / priority_demote_ids.
+4. Transcribe any new handwritten text on blank New Tasks lines → new_items.
+5. Transcribe any new handwritten text added to Priorities blank rows → priority_items.
+6. Done Recently strip is INERT — ignore it entirely.
+7. Conservative rule: only act when you are confident. Uncertain → add to "uncertain".
 
-NEW HANDWRITING:
-  • Handwritten text in the New Tasks region  → new_items
-  • Handwritten text in the Priorities region → priority_items
-  • Done Recently strip is INERT — ignore everything in it
-
-CONSERVATIVE RULE: Only mark an item when the ink is clearly on its checkbox or arrow. \
-When unsure, add to "uncertain" with a note.
+MATCHING NUMBERS TO ITEMS:
+  • A plain number (1, 2, 3…) in an action zone refers to a From Yesterday or New Tasks item
+    with that display_index.
+  • "S1", "S2", "S3" refers to Someday items.
+  • "P1"–"P5" refers to Priority items.
 
 OUTPUT JSON SCHEMA (all fields required, empty arrays when nothing applies):
 {schema}
@@ -74,15 +72,7 @@ _SCHEMA = json.dumps({
 
 
 def _build_prompt(known_items: list, region_bounds: dict) -> str:
-    from generate_template import W, H, CHK_X, CHK_SZ, TXT_X, UP_X, DN_X
-    cols = region_bounds.get("columns", {})
     return _PROMPT.format(
-        W=W, H=H,
-        CHK_X=cols.get("checkbox_x",  CHK_X),
-        CHK_SZ=cols.get("checkbox_size", CHK_SZ),
-        TXT_X=cols.get("text_x",      TXT_X),
-        UP_X=cols.get("up_arrow_x",   UP_X),
-        DN_X=cols.get("down_arrow_x", DN_X),
         items_json=json.dumps(known_items, indent=2),
         regions_json=json.dumps(region_bounds, indent=2),
         schema=_SCHEMA,

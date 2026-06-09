@@ -93,7 +93,7 @@ def build_page(
     for i, t in enumerate(pri_tasks):
         row = pri_rows[i] if i < len(pri_rows) else {}
         items.append({
-            "display_index": i + 1,
+            "display_index": f"P{i+1}",
             "task_id": t["id"],
             "text": t["text"],
             "region": "priorities",
@@ -103,7 +103,7 @@ def build_page(
     for i, t in enumerate(sd_tasks):
         row = sd_rows[i] if i < len(sd_rows) else {}
         items.append({
-            "display_index": i + 1,
+            "display_index": f"S{i+1}",
             "task_id": t["id"],
             "text": t["text"],
             "region": "someday",
