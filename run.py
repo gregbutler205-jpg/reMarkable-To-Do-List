@@ -134,83 +134,19 @@ def main():
             region_bounds = cp.get("region_bounds", {})
             print(f"Known items: {known_items}", flush=True)
 
-            # ── Geometric mark detection (strikethrough via .rm strokes) ────
-            rm_path = rmapi_client.extract_rm_file(tmpdir)
-            if rm_path:
-                geo = rm_reader.detect_marks(rm_path, region_bounds, known_items)
-                for k, v in geo.items():
-                    if not k.startswith("_") and v:
-                        read_result[k] = v
-                print(f"Geometric marks: {geo}", flush=True)
-            else:
-                print("No .rm file — skipping geometric detection", flush=True)
-
-            # ── Action box: crop from thumbnail, send to LLM ─────────────
-            # Always crop from the page image — this works even when rmscene
-            # can't parse the .rm format (Paper Pro v6 strokes).
-            az_png = _crop_action_box(images[0], region_bounds)
-            if az_png:
-                print(f"Action box crop: {len(az_png)} bytes", flush=True)
-                try:
-                    az = llm_reader.read_action_zone(
-                        az_png, known_items, provider=provider
-                    )
-                    print(f"Action zone LLM: {az}", flush=True)
-                    idx_to_id = {
-                        str(item["display_index"]): item["task_id"]
-                        for item in known_items
-                    }
-                    def _region_of(tid_):
-                        return next((i["region"] for i in known_items
-                                     if i["task_id"] == tid_), "")
-
-                    for num in az.get("promote_numbers", []):
-                        tid = idx_to_id.get(str(num).strip())
-                        if tid:
-                            r = _region_of(tid)
-                            if r == "someday":
-                                read_result["sd_promote_ids"].append(tid)
-                            else:
-                                read_result["promote_item_ids"].append(tid)
-                    for num in az.get("demote_numbers", []):
-                        tid = idx_to_id.get(str(num).strip())
-                        if tid:
-                            r = _region_of(tid)
-                            if r == "priorities":
-                                read_result["priority_demote_ids"].append(tid)
-                            else:
-                                read_result["demote_item_ids"].append(tid)
-                    for num in az.get("done_numbers", []):
-                        tid = idx_to_id.get(str(num).strip())
-                        if tid:
-                            r = _region_of(tid)
-                            if r == "priorities":
-                                read_result["priority_done_ids"].append(tid)
-                            elif r == "someday":
-                                read_result["sd_done_ids"].append(tid)
-                            else:
-                                read_result["done_item_ids"].append(tid)
-                except Exception as exc:
-                    errors.append(f"Action zone LLM failed: {exc}")
-            else:
-                print("Action box crop failed — no region_bounds?", flush=True)
-
-            # ── LLM: full-page read for new handwritten text ──────────────
-            # (We still send the full page image, but only use it for
-            #  new_items / priority_items transcription, not for marks.)
+            # ── Single LLM call: full thumbnail → action box + new tasks ──
+            # The thumbnail is the device's own render so handwriting is clear.
+            # One call handles everything: action box numbers AND new task text.
             try:
                 llm_result = llm_reader.read_page(
                     images[0], known_items, region_bounds, provider=provider
                 )
                 print(f"LLM result: {llm_result}", flush=True)
-                read_result["new_items"]      = llm_result.get("new_items", [])
-                read_result["priority_items"] = llm_result.get("priority_items", [])
-                read_result["uncertain"]      = llm_result.get("uncertain", [])
-                # Use full-page LLM marks only as fallback if geometric found nothing
                 for k in ("done_item_ids", "promote_item_ids", "demote_item_ids",
                           "sd_done_ids", "sd_promote_ids",
-                          "priority_done_ids", "priority_demote_ids"):
-                    if not read_result[k] and llm_result.get(k):
+                          "priority_done_ids", "priority_demote_ids",
+                          "new_items", "priority_items", "uncertain"):
+                    if llm_result.get(k):
                         read_result[k] = llm_result[k]
             except Exception as exc:
                 errors.append(f"LLM read failed: {exc}")

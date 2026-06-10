@@ -15,63 +15,70 @@ import config
 _PROMPT = """\
 You are reading a reMarkable tablet to-do page. Return ONLY strict JSON — no prose, no markdown.
 
-INTERACTION MODEL (v4 — read carefully):
-  • NEW TASK: user wrote new text on a blank ruled line in the "New tasks" section.
-  • MARKS: handled separately via the action box — ignore any strikethroughs or numbers
-    written near tasks; focus only on transcribing new handwritten text.
-
 ITEM NUMBERING:
   • From Yesterday items:  printed as  1.  2.  3.  etc.
-  • New Tasks rows:        continue numbering from From Yesterday (e.g. 6. 7. 8. …)
+  • New Tasks rows:        continue numbering from From Yesterday (e.g. 7. 8. 9. …)
   • Someday items:         printed as  S1.  S2.  S3.
   • Priority items:        printed as  P1.  P2.  P3.  P4.  P5.
 
-ACTION BOX (amber box in the top-right, next to From Yesterday):
-  Ignore — handled separately. Focus only on NEW TASK text in blank New Tasks rows.
+ACTION BOX (amber/yellow box in the top-right corner, next to From Yesterday tasks):
+  This box has 3 rows with printed labels on the left and a write-in area on the right.
+  The faint gray text "write item #s (e.g. 1, 3, P2)" is a PRINTED HINT — ignore it.
+  Look only for DARK HANDWRITTEN numbers/letters in each row's write-in area.
+
+  Row "Priority"  — handwritten numbers here = promote those items to Priority.
+  Row "Someday"   — handwritten numbers here = park those items to Someday.
+  Row "Completed" — handwritten numbers here = mark those items as done.
+
+  Multiple numbers per row are fine (e.g. "3, 5, P2").
 
 KNOWN PRINTED ITEMS:
 {items_json}
 
-REGION BOUNDS (for spatial reference):
-{regions_json}
+KNOWN PRINTED ITEMS:
+{items_json}
 
 INSTRUCTIONS:
-1. Scan every printed task row. If user drew a line through the text → add to done list.
-2. Read any handwritten numbers in the "★ → Priority" zone → promote_item_ids / sd_promote_ids.
-3. Read any handwritten numbers in the "⇓ → Someday" zone → demote_item_ids / priority_demote_ids.
-4. Transcribe any new handwritten text on blank New Tasks lines → new_items.
-5. Transcribe any new handwritten text added to Priorities blank rows → priority_items.
-6. Done Recently strip is INERT — ignore it entirely.
-7. Conservative rule: only act when you are confident. Uncertain → add to "uncertain".
+1. ACTION BOX (amber box, top-right):
+   a. Read dark handwritten numbers/letters in the "Priority" row write-in area.
+      Map each to an item using the numbering above → populate promote fields.
+   b. Read dark handwritten numbers in the "Someday" row → populate demote fields.
+   c. Read dark handwritten numbers in the "Completed" row → populate done fields.
+   The faint gray hint text is printed — ignore it.  Only read dark pen marks.
 
-MATCHING NUMBERS TO ITEMS:
-  • A plain number (1, 2, 3…) in an action zone refers to a From Yesterday or New Tasks item
-    with that display_index.
-  • "S1", "S2", "S3" refers to Someday items.
-  • "P1"–"P5" refers to Priority items.
+2. NEW TASKS: transcribe any dark handwritten text on blank ruled lines in the
+   "New tasks" section.  Each line of text = one new item.
 
-OUTPUT JSON SCHEMA (all fields required, empty arrays when nothing applies):
+3. Done Recently strip at the bottom is INERT — ignore entirely.
+
+4. Conservative rule: if you are not confident a mark is intentional, add to "uncertain".
+
+MATCHING numbers to task IDs:
+  • plain number (1, 2, 3 …) → From Yesterday / New Tasks item with that display_index
+  • "S1" "S2" "S3"           → Someday item with that display_index
+  • "P1"–"P5"                → Priority item with that display_index
+
+OUTPUT JSON (all fields required, empty arrays when nothing applies):
 {schema}
 """
 
 _SCHEMA = json.dumps({
-    "done_item_ids":      ["id_string"],
-    "promote_item_ids":   ["id_string"],
-    "demote_item_ids":    ["id_string"],
-    "sd_done_ids":        ["id_string"],
-    "sd_promote_ids":     ["id_string"],
-    "priority_done_ids":  ["id_string"],
-    "priority_demote_ids":["id_string"],
-    "new_items": [{"text": "string", "region": "new_tasks", "confidence": "high|medium|low"}],
-    "priority_items": [{"text": "string", "region": "priorities", "confidence": "high|medium|low"}],
-    "uncertain": [{"about": "id_string_or_region", "note": "string"}],
+    "done_item_ids":       ["task_id_string"],
+    "promote_item_ids":    ["task_id_string"],
+    "demote_item_ids":     ["task_id_string"],
+    "sd_done_ids":         ["task_id_string"],
+    "sd_promote_ids":      ["task_id_string"],
+    "priority_done_ids":   ["task_id_string"],
+    "priority_demote_ids": ["task_id_string"],
+    "new_items":      [{"text": "string", "confidence": "high|medium|low"}],
+    "priority_items": [{"text": "string", "confidence": "high|medium|low"}],
+    "uncertain":      [{"about": "id_or_region", "note": "string"}],
 }, indent=2)
 
 
 def _build_prompt(known_items: list, region_bounds: dict) -> str:
     return _PROMPT.format(
         items_json=json.dumps(known_items, indent=2),
-        regions_json=json.dumps(region_bounds, indent=2),
         schema=_SCHEMA,
     )
 
