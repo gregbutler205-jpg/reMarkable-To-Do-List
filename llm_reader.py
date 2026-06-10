@@ -130,9 +130,9 @@ _ACTION_ZONE_PROMPT = """\
 This image shows handwriting the user wrote inside a small action box on their to-do page.
 The box has three rows:
 
-  "★ prio:"  — numbers written here mean PROMOTE those items to Priority.
-  "⇓ park:"  — numbers written here mean DEMOTE / park those items to Someday.
-  "✕ done:"  — numbers written here mean mark those items as DONE.
+  "Priority:"  — numbers written here mean PROMOTE those items to Priority.
+  "Someday:"   — numbers written here mean DEMOTE / park those items to Someday.
+  "Completed:" — numbers written here mean mark those items as DONE.
 
 Item numbering on the page:
   • Plain numbers (1, 2, 3…) = From Yesterday or New Tasks items.
@@ -142,11 +142,13 @@ Item numbering on the page:
 Known items:
 {items_json}
 
+Multiple numbers per row are fine — the user may write several (e.g. "3, 5, P2").
+
 Return ONLY strict JSON — no prose, no markdown fences:
 {{
   "promote_numbers": ["1", "S2"],
   "demote_numbers":  ["P1"],
-  "done_numbers":    ["2", "3"]
+  "done_numbers":    ["2", "3", "P2"]
 }}
 Use empty arrays if a row has nothing written or you cannot read it confidently.
 """

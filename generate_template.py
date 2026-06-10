@@ -110,22 +110,22 @@ ML, MR = 173, 1560
 NUM_X        = 148       # number right-align x
 TXT_X        = 168       # text / ruled-line start x
 LINE_END     = 1560      # full-width line end (Priority, NT, Someday)
-FY_LINE_END  = 1358      # shortened for FY rows — leaves room for action box
+FY_LINE_END  = 810       # shortened for FY rows — leaves room for action box
 
 # ── Right-side action box (FIXED position — never moves) ─────────────────────
-# Sits in the right margin, vertically aligned with the From Yesterday section.
-ACT_BOX_X1  = 1375      # left edge
-ACT_BOX_X2  = 1602      # right edge  (~page right margin)
-ACT_BOX_LBL = 75        # width of label column inside box
-ACT_WI_X    = ACT_BOX_X1 + ACT_BOX_LBL  # 1450 — write-in area starts here
-ACT_BOX_ROW = 52        # height of each action row
-ACT_BOX_PAD = 10        # internal top/bottom padding
+# Spans ~45 % of page width, right-aligned.  Tall rows so numbers are easy to write.
+ACT_BOX_X1  = 829       # left edge   (1558 − 729 ≈ 45 % of 1620)
+ACT_BOX_X2  = 1558      # right edge  (= MR)
+ACT_BOX_LBL = 155       # width of label column ("Completed" at 24 pt needs ~140 px)
+ACT_WI_X    = ACT_BOX_X1 + ACT_BOX_LBL  # 984 — write-in area starts here
+ACT_BOX_ROW = 100       # height of each action row (tall = easy to write in)
+ACT_BOX_PAD = 14        # internal top/bottom padding
 ACT_BOX_Y1  = 522       # top of box (just above FY_LABEL_Y=538)
-ACT_BOX_Y2  = ACT_BOX_Y1 + ACT_BOX_PAD + 3*ACT_BOX_ROW + ACT_BOX_PAD  # 698
+ACT_BOX_Y2  = ACT_BOX_Y1 + ACT_BOX_PAD + 3*ACT_BOX_ROW + ACT_BOX_PAD  # 850
 # Row y1 values (SVG coords, y=0 at top)
-ACT_ROW_PRI = ACT_BOX_Y1 + ACT_BOX_PAD                          # 532
-ACT_ROW_SD  = ACT_ROW_PRI + ACT_BOX_ROW                         # 584
-ACT_ROW_DON = ACT_ROW_SD  + ACT_BOX_ROW                         # 636
+ACT_ROW_PRI = ACT_BOX_Y1 + ACT_BOX_PAD                          # 536
+ACT_ROW_SD  = ACT_ROW_PRI + ACT_BOX_ROW                         # 636
+ACT_ROW_DON = ACT_ROW_SD  + ACT_BOX_ROW                         # 736
 
 # Row heights
 RH_PRI  = 60
@@ -238,14 +238,19 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
     for div_y in (ACT_ROW_SD, ACT_ROW_DON):
         hline(c, ACT_BOX_X1, div_y, ACT_BOX_X2, color=ACT_BORDER, lw=1)
     # Labels + write-in lines
-    for row_y, sym, sym_color in (
-        (ACT_ROW_PRI, "★ prio", ACCENT),
-        (ACT_ROW_SD,  "⇓ park", ACCENT),
-        (ACT_ROW_DON, "✕ done", LEGEND_INK),
+    for row_y, label, sym_color in (
+        (ACT_ROW_PRI, "Priority",  ACCENT),
+        (ACT_ROW_SD,  "Someday",   ACCENT),
+        (ACT_ROW_DON, "Completed", LEGEND_INK),
     ):
-        cy = row_y + ROW_CY_OFF
-        txt(c, sym, ACT_BOX_X1 + 8, cy + 6, size=22, bold=True, color=sym_color)
-        hline(c, ACT_WI_X + 4, cy + 22, ACT_BOX_X2 - 8, color=RULE_LIGHT, lw=1)
+        # Label centred vertically in each row
+        txt(c, label, ACT_BOX_X1 + 10, row_y + 52, size=24, bold=True, color=sym_color)
+        # Faint hint on first write-in line
+        txt(c, "write item #s  (e.g. 1, 3, P2)",
+            ACT_WI_X + 6, row_y + 28, size=18, color=RULE_LIGHT)
+        # Two write-in rules per row (room for many numbers)
+        hline(c, ACT_WI_X + 4, row_y + 46,  ACT_BOX_X2 - 8, color=RULE_LIGHT, lw=1)
+        hline(c, ACT_WI_X + 4, row_y + 84,  ACT_BOX_X2 - 8, color=RULE_LIGHT, lw=1)
 
     # ── From Yesterday ────────────────────────────────────────────────────────
     txt(c, "From yesterday", ML, FY_LABEL_Y, size=29, color=ACCENT, bold=True)
@@ -299,7 +304,7 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
 
     # ── Footer ────────────────────────────────────────────────────────────────
     hline(c, ML, L['ftr_rule'], MR, color=FTR_RULE)
-    leg = ("Action box (top right): write item # in ★prio / ⇓park / ✕done row   ·   "
+    leg = ("Action box (top right): write item #s in Priority / Someday / Completed row   ·   "
            "no mark = carries forward")
     txt(c, leg, ML, L['legend_y'], size=22, color=LEGEND_INK)
 
@@ -320,9 +325,9 @@ def region_map(n_fy: int) -> dict:
             "x1": ACT_BOX_X1, "x2": ACT_BOX_X2,
             "write_in_x1": ACT_WI_X,
             "y1": ACT_BOX_Y1, "y2": ACT_BOX_Y2,
-            "priority_row": {"y1": ACT_ROW_PRI, "y2": ACT_ROW_SD,  "label": "★ prio"},
-            "someday_row":  {"y1": ACT_ROW_SD,  "y2": ACT_ROW_DON, "label": "⇓ park"},
-            "done_row":     {"y1": ACT_ROW_DON, "y2": ACT_BOX_Y2,  "label": "✕ done"},
+            "priority_row": {"y1": ACT_ROW_PRI, "y2": ACT_ROW_SD,  "label": "Priority"},
+            "someday_row":  {"y1": ACT_ROW_SD,  "y2": ACT_ROW_DON, "label": "Someday"},
+            "done_row":     {"y1": ACT_ROW_DON, "y2": ACT_BOX_Y2,  "label": "Completed"},
             "note": ("Write item numbers in the matching row. "
                      "1-N for From Yesterday/New Tasks, "
                      "P1-P5 for Priority, S1-S3 for Someday."),

@@ -84,6 +84,49 @@ def pull_as_pdf(dest_dir: str) -> str:
     return placeholder
 
 
+def extract_page_image(dest_dir: str) -> str | None:
+    """
+    Extract the best available rendered image of the current page from the rmdoc.
+
+    Tries, in order:
+      1. thumbnails/0.jpg  — rendered by the reMarkable device itself (perfect quality,
+                             strokes already composited by the device's own renderer)
+      2. Any *.jpg / *.png in the rmdoc (some firmware versions name it differently)
+
+    Returns the local path to the image file, or None if not found.
+    The .rmdoc must already have been downloaded by pull_as_pdf().
+    """
+    import zipfile
+    rmdoc = next(Path(dest_dir).glob("*.rmdoc"), None)
+    if not rmdoc:
+        print("extract_page_image: no .rmdoc found", flush=True)
+        return None
+
+    with zipfile.ZipFile(rmdoc) as z:
+        names = z.namelist()
+        print(f"extract_page_image: rmdoc entries = {names}", flush=True)
+
+        # Priority: device thumbnail
+        thumb_candidates = sorted(
+            [n for n in names if n.lower().endswith(('.jpg', '.jpeg', '.png'))],
+            key=lambda n: (
+                0 if 'thumbnail' in n.lower() else 1,  # thumbnails first
+                n,
+            )
+        )
+        if thumb_candidates:
+            chosen = thumb_candidates[0]
+            ext    = Path(chosen).suffix.lower()
+            out    = str(Path(dest_dir) / f"page_thumb{ext}")
+            with z.open(chosen) as src, open(out, "wb") as dst:
+                dst.write(src.read())
+            print(f"extract_page_image: extracted {chosen} → {out}", flush=True)
+            return out
+
+    print("extract_page_image: no image found in rmdoc", flush=True)
+    return None
+
+
 def extract_rm_file(dest_dir: str) -> str | None:
     """
     Extract the first .rm handwriting file from the cached .rmdoc in dest_dir.
