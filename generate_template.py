@@ -245,12 +245,11 @@ def render_page(c, date_str, L, fy_items, sd_items=None, done_items=None,
     ):
         # Label centred vertically in each row
         txt(c, label, ACT_BOX_X1 + 10, row_y + 52, size=24, bold=True, color=sym_color)
-        # Faint hint on first write-in line
+        # Faint hint above the write-in line
         txt(c, "write item #s  (e.g. 1, 3, P2)",
-            ACT_WI_X + 6, row_y + 28, size=18, color=RULE_LIGHT)
-        # Two write-in rules per row (room for many numbers)
-        hline(c, ACT_WI_X + 4, row_y + 46,  ACT_BOX_X2 - 8, color=RULE_LIGHT, lw=1)
-        hline(c, ACT_WI_X + 4, row_y + 84,  ACT_BOX_X2 - 8, color=RULE_LIGHT, lw=1)
+            ACT_WI_X + 6, row_y + 38, size=18, color=RULE_LIGHT)
+        # Single write-in rule centred in the row
+        hline(c, ACT_WI_X + 4, row_y + 65,  ACT_BOX_X2 - 8, color=RULE_LIGHT, lw=1)
 
     # ── From Yesterday ────────────────────────────────────────────────────────
     txt(c, "From yesterday", ML, FY_LABEL_Y, size=29, color=ACCENT, bold=True)
