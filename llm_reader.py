@@ -26,8 +26,8 @@ ITEM NUMBERING:
   • Someday items:         printed as  S1.  S2.  S3.
   • Priority items:        printed as  P1.  P2.  P3.  P4.  P5.
 
-ACTION BOX (small amber box in the top-right corner):
-  Ignore — handled separately. Do NOT report marks from here.
+ACTION BOX (amber box in the top-right, next to From Yesterday):
+  Ignore — handled separately. Focus only on NEW TASK text in blank New Tasks rows.
 
 KNOWN PRINTED ITEMS:
 {items_json}

@@ -31,6 +31,41 @@ import rmapi_client
 from sheet_store import SheetStore
 
 
+def _crop_action_box(img_path: str, region_bounds: dict,
+                     page_w: int = 1620, page_h: int = 2160) -> bytes | None:
+    """
+    Crop the action box region from the page image and return PNG bytes.
+    Scales up to at least 800 px wide so the LLM can read the numbers clearly.
+    """
+    import io as _io
+    try:
+        from PIL import Image as _PILImage
+        ab = region_bounds.get("action_box", {})
+        if not ab:
+            return None
+        img = _PILImage.open(img_path).convert("RGB")
+        iw, ih = img.size
+        sx, sy = iw / page_w, ih / page_h
+        PAD = 6
+        x1 = max(0,  int(ab["x1"] * sx) - PAD)
+        y1 = max(0,  int(ab["y1"] * sy) - PAD)
+        x2 = min(iw, int(ab["x2"] * sx) + PAD)
+        y2 = min(ih, int(ab["y2"] * sy) + PAD)
+        crop = img.crop((x1, y1, x2, y2))
+        # Scale up so the LLM can read small handwriting
+        cw, ch = crop.size
+        if cw < 800:
+            scale = 800 // max(cw, 1)
+            crop = crop.resize((cw * scale, ch * scale), _PILImage.LANCZOS)
+        buf = _io.BytesIO()
+        crop.save(buf, format="PNG")
+        print(f"_crop_action_box: crop {x1},{y1}-{x2},{y2} → {crop.size}", flush=True)
+        return buf.getvalue()
+    except Exception as exc:
+        print(f"_crop_action_box failed: {exc}", flush=True)
+        return None
+
+
 def main():
     store = SheetStore()
     errors: list[str] = []
@@ -99,63 +134,66 @@ def main():
             region_bounds = cp.get("region_bounds", {})
             print(f"Known items: {known_items}", flush=True)
 
-            # ── Geometric mark detection (v3: strikethrough + action zone) ─
+            # ── Geometric mark detection (strikethrough via .rm strokes) ────
             rm_path = rmapi_client.extract_rm_file(tmpdir)
             if rm_path:
                 geo = rm_reader.detect_marks(rm_path, region_bounds, known_items)
-                # Copy standard mark fields (ignore private _ keys)
                 for k, v in geo.items():
                     if not k.startswith("_") and v:
                         read_result[k] = v
-
-                # ── Action zone: LLM reads the stroke image ───────────────
-                az_png = geo.get("_action_zone_png")
-                if az_png:
-                    try:
-                        az = llm_reader.read_action_zone(
-                            az_png, known_items, provider=provider
-                        )
-                        print(f"Action zone LLM: {az}", flush=True)
-                        # Build a display-index → task_id lookup
-                        idx_to_id = {
-                            str(item["display_index"]): item["task_id"]
-                            for item in known_items
-                        }
-                        def _region_of(tid_):
-                            return next((i["region"] for i in known_items
-                                         if i["task_id"] == tid_), "")
-
-                        for num in az.get("promote_numbers", []):
-                            tid = idx_to_id.get(str(num).strip())
-                            if tid:
-                                r = _region_of(tid)
-                                if r == "someday":
-                                    read_result["sd_promote_ids"].append(tid)
-                                else:
-                                    read_result["promote_item_ids"].append(tid)
-                        for num in az.get("demote_numbers", []):
-                            tid = idx_to_id.get(str(num).strip())
-                            if tid:
-                                r = _region_of(tid)
-                                if r == "priorities":
-                                    read_result["priority_demote_ids"].append(tid)
-                                else:
-                                    read_result["demote_item_ids"].append(tid)
-                        for num in az.get("done_numbers", []):
-                            tid = idx_to_id.get(str(num).strip())
-                            if tid:
-                                r = _region_of(tid)
-                                if r == "priorities":
-                                    read_result["priority_done_ids"].append(tid)
-                                elif r == "someday":
-                                    read_result["sd_done_ids"].append(tid)
-                                else:
-                                    read_result["done_item_ids"].append(tid)
-                    except Exception as exc:
-                        errors.append(f"Action zone LLM failed: {exc}")
                 print(f"Geometric marks: {geo}", flush=True)
             else:
-                print("No .rm file available for geometric detection", flush=True)
+                print("No .rm file — skipping geometric detection", flush=True)
+
+            # ── Action box: crop from thumbnail, send to LLM ─────────────
+            # Always crop from the page image — this works even when rmscene
+            # can't parse the .rm format (Paper Pro v6 strokes).
+            az_png = _crop_action_box(images[0], region_bounds)
+            if az_png:
+                print(f"Action box crop: {len(az_png)} bytes", flush=True)
+                try:
+                    az = llm_reader.read_action_zone(
+                        az_png, known_items, provider=provider
+                    )
+                    print(f"Action zone LLM: {az}", flush=True)
+                    idx_to_id = {
+                        str(item["display_index"]): item["task_id"]
+                        for item in known_items
+                    }
+                    def _region_of(tid_):
+                        return next((i["region"] for i in known_items
+                                     if i["task_id"] == tid_), "")
+
+                    for num in az.get("promote_numbers", []):
+                        tid = idx_to_id.get(str(num).strip())
+                        if tid:
+                            r = _region_of(tid)
+                            if r == "someday":
+                                read_result["sd_promote_ids"].append(tid)
+                            else:
+                                read_result["promote_item_ids"].append(tid)
+                    for num in az.get("demote_numbers", []):
+                        tid = idx_to_id.get(str(num).strip())
+                        if tid:
+                            r = _region_of(tid)
+                            if r == "priorities":
+                                read_result["priority_demote_ids"].append(tid)
+                            else:
+                                read_result["demote_item_ids"].append(tid)
+                    for num in az.get("done_numbers", []):
+                        tid = idx_to_id.get(str(num).strip())
+                        if tid:
+                            r = _region_of(tid)
+                            if r == "priorities":
+                                read_result["priority_done_ids"].append(tid)
+                            elif r == "someday":
+                                read_result["sd_done_ids"].append(tid)
+                            else:
+                                read_result["done_item_ids"].append(tid)
+                except Exception as exc:
+                    errors.append(f"Action zone LLM failed: {exc}")
+            else:
+                print("Action box crop failed — no region_bounds?", flush=True)
 
             # ── LLM: full-page read for new handwritten text ──────────────
             # (We still send the full page image, but only use it for
