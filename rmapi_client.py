@@ -120,6 +120,14 @@ def extract_page_image(dest_dir: str) -> str | None:
             out    = str(Path(dest_dir) / f"page_thumb{ext}")
             with z.open(chosen) as src, open(out, "wb") as dst:
                 dst.write(src.read())
+            # Device thumbnails are stored mirrored — flip back to correct orientation
+            try:
+                from PIL import Image as _PILImage
+                _img = _PILImage.open(out).transpose(_PILImage.FLIP_LEFT_RIGHT)
+                _img.save(out)
+                print(f"extract_page_image: flipped thumbnail horizontally", flush=True)
+            except Exception as _fe:
+                print(f"extract_page_image: flip failed (non-fatal): {_fe}", flush=True)
             print(f"extract_page_image: extracted {chosen} → {out}", flush=True)
             return out
 
