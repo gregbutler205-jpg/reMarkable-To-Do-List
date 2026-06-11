@@ -120,14 +120,6 @@ def extract_page_image(dest_dir: str) -> str | None:
             out    = str(Path(dest_dir) / f"page_thumb{ext}")
             with z.open(chosen) as src, open(out, "wb") as dst:
                 dst.write(src.read())
-            # Device thumbnails are stored rotated 180° — rotate back
-            try:
-                from PIL import Image as _PILImage
-                _img = _PILImage.open(out).rotate(180)
-                _img.save(out)
-                print(f"extract_page_image: rotated thumbnail 180°", flush=True)
-            except Exception as _fe:
-                print(f"extract_page_image: rotate failed (non-fatal): {_fe}", flush=True)
             print(f"extract_page_image: extracted {chosen} → {out}", flush=True)
             return out
 

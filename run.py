@@ -99,24 +99,14 @@ def main():
             return
 
         # ── 3. Read ───────────────────────────────────────────────────────────
-        # Use device thumbnail from rmdoc — the reMarkable device composites
-        # template + handwriting itself.  rmapi export omits handwriting strokes.
-        page_img_path = rmapi_client.extract_page_image(tmpdir)
-        if page_img_path:
-            print(f"Using device thumbnail: {page_img_path}", flush=True)
-            from PIL import Image as _PILImage
-            _pi = _PILImage.open(page_img_path).convert("RGB")
-            page_img_png = page_img_path.rsplit(".", 1)[0] + ".png"
-            _pi.save(page_img_png)
-            images = [page_img_png]
-        else:
-            print("No device thumbnail — falling back to exported PDF", flush=True)
-            try:
-                images = pdf_to_image.pdf_to_images(pulled_pdf)
-            except Exception as exc:
-                errors.append(f"pdf_to_image failed: {exc}")
-                notifier.send_alert("rasterize failed", str(exc))
-                sys.exit(1)
+        # Use the rmapi export PDF — rendered by the reMarkable cloud with strokes.
+        print("Rasterizing exported PDF for LLM reading...", flush=True)
+        try:
+            images = pdf_to_image.pdf_to_images(pulled_pdf)
+        except Exception as exc:
+            errors.append(f"pdf_to_image failed: {exc}")
+            notifier.send_alert("rasterize failed", str(exc))
+            sys.exit(1)
 
         read_result = {"done_item_ids": [], "promote_item_ids": [], "demote_item_ids": [],
                        "sd_done_ids": [], "sd_promote_ids": [],
